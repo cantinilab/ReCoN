@@ -1,0 +1,51 @@
+[project]
+name = "recon"
+version = "0.1.0"
+description = "ReCoN: [Reconstruction of multicellular systems from single-cell data to predict perturbation responses and cell programs coordination]"
+authors = [
+    { name="Rémi Trimbour", email="remi.trimbour@gmail.com" }
+]
+readme = "README.md"
+requires-python = ">=3.8"
+license = "AGPL-3.0"
+keywords = ["recon", "multilayer", "single-cell", "treatment"]
+
+dependencies = [
+    "numpy<2.0.0",
+    "pandas",         # means any version
+    "hummuspy",
+    "multixrank",
+    "scanpy",
+    "scipy",
+    "plotly",
+    "arboreto",
+    "matplotlib",
+    "circe-py>=0.3.9"
+]
+
+[project.optional-dependencies]
+grn = [
+  "celloracle @ git+https://github.com/cantinilab/celloracle@lite"
+]
+
+[project.urls]
+Homepage = "https://recon.readthedocs.io"
+Repository = "https://github.com/cantinilab/recon"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "numpy", "Cython"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}   # root of packages is "src"
+
+[tool.setuptools.package-data]
+# Include any package data files if needed
+# recon = ["data/*.json"]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests",
+]
