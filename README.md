@@ -49,6 +49,10 @@ If you generate GRNs externally, install ReCoN without GRN dependencies to use n
 ```bash
 pip install recon
 ```
+> ### 🔧 Troubleshooting & FAQs
+> 📖 For installation issues, dependency conflicts, or runtime errors,  
+> please check our dedicated [**Troubleshooting and FAQs guide**](docs/source/recon_explained/get_ready.rst).
+---
 
 ---
 
@@ -132,3 +136,4 @@ If you also use ReCoN to generate GRNs, cite:
 > *Bioinformatics*, 40(3), btae143. https://doi.org/10.1093/bioinformatics/btae143  
 
 ---
+
