@@ -33,7 +33,7 @@ def compute_tf_network(
         tf_network["target"] = "fake_TF"
         return tf_network
     else:
-        ValueError("""For now, no method has been implemented.
+        raise ValueError("""For now, no method has been implemented.
                    Do not precise a method, or use another function.""")
 
 
@@ -153,6 +153,7 @@ def compute_rna_network(
 def compute_tf_to_atac_links(
     atac,
     ref_genome,
+    tfs_list: Union[List[str], None] = None,
     genomes_dir=None,
     motifs=None,
     fpr=0.02,
@@ -254,6 +255,9 @@ def compute_tf_to_atac_links(
                 "factors_indirect": "factor"})
         # Combine
         result = pd.concat([direct, indirect]).dropna().reset_index(drop=True)
+        if tfs_list is not None:
+            result = result[result["factor"].isin(tfs_list)]
+
         result["factor"] = result["factor"] + '_TF'
         return result[["factor", "peak"]].rename(
             columns={
@@ -263,6 +267,8 @@ def compute_tf_to_atac_links(
 
     else:
         direct["factor"] = direct["factor"] + '_TF'
+        if tfs_list is not None:
+            direct = direct[direct["factor"].str.replace('_TF', '').isin(tfs_list)]
         return direct[["factor", "peak"]].rename(
             columns={
                 "factor": "source",
