@@ -1,0 +1,8 @@
+/* Style for your custom "research" admonition */
+.admonition.research {
+  border-color: #f4a6fa;
+}
+
+.admonition.research > .admonition-title {
+   background-color: #f4a6fa;
+}
