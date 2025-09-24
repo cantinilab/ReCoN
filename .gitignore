@@ -1,0 +1,5 @@
+build/*
+src/recon.egg-info/*
+
+docs/build/*
+
