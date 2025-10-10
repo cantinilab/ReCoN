@@ -133,10 +133,13 @@ class Celltype:
 
                 receptor_grn_bipartite = pd.read_csv(
                     receptor_grn_bipartite, sep=None, engine='python')
+            
+            receptor_grn_bipartite["source"] = receptor_grn_bipartite["source"] + "_receptor"
+
             receptor_graph = pd.DataFrame({
-                "source": receptor_grn_bipartite.loc[:, 'receptor'].unique(),
+                "source": receptor_grn_bipartite.loc[:, 'source'].unique(),
                 "target": ["fake_receptor" for r in range(
-                    len(receptor_grn_bipartite.loc[:, 'receptor'].unique()))]
+                    len(receptor_grn_bipartite.loc[:, 'source'].unique()))]
                 }
             )
 
@@ -148,7 +151,7 @@ class Celltype:
                 "layers": [receptor_graph]
             },
             celltype_name + "_grn": {
-                "names": ["grn"],
+                "names": ["gene"],
                 "graph_type": [grn_graph_type],
                 "layers": [grn_graph]
             }
@@ -156,8 +159,8 @@ class Celltype:
 
         # Format receptor_grn_bipartite dictionary
         receptor_grn_bipartite = receptor_grn_bipartite.rename({
-            'receptor': 'col2',
-            'grn': 'col1',
+            'source': 'col2',
+            'target': 'col1',
             'score': 'weight'}, axis=1)
 
         self.bipartites = {
@@ -223,21 +226,19 @@ class Celltype:
                 eta=self.eta.tolist(),
                 verbose=verbose)
 
-            print("Creating a probability vector with seeds' names & weights.")
+            print("Identifying produced ligands in response to the perturbation.")
             # Create a probability vector from the seeds' names and weights
             node_list = [node for node_list
                          in multilayer.multiplexall_node_list2d
                          for node in node_list]
             prox_vector = np.zeros(len(node_list))
 
-            print("Filling the probability vector with the seeds' weights.")
             # Position is matching node order in the multilayer.
             node_arr = np.array(node_list)
-            for seed, value in tqdm.tqdm(self.seeds.items()):
+            for seed, value in self.seeds.items():
                 idx = np.where(node_arr == seed)[0]
                 if idx.size:
                     prox_vector[idx[0]] = value
-            print("Normalizing the probability vector.")
             # Values are normalized.
             multilayer.pr = prox_vector/prox_vector.sum()
 #            multilayer.seed = hummuspy.create_multilayer.Seed(
@@ -305,7 +306,7 @@ class Multicell(Celltype):
         celltypes: Union[
             List[Celltype],
             List[Dict],
-            List[Dict[str, Any]]
+            List[Dict[str, Celltype]]
         ],
         cell_communication_graph: pd.DataFrame,
         lamb=None,
@@ -632,7 +633,7 @@ def multicell_targets(
     celltypes,
     ccc,
     grn,
-    receptor_grn,
+    receptor_grn: Union[str, pd.DataFrame],
     receptor_layer=None,
     grn_graph_directed=False,
     grn_graph_weighted=True,
@@ -653,7 +654,9 @@ def multicell_targets(
     ccc_to_celltype_proba = None,
     ccc_proba = 0.5,
     grn_proba = 0.5,
-    njobs=-1
+    njobs=-1,
+    verbose=True,
+    keep_layers="gene",
 ):
     if extend_seeds:
         if type(seeds) is not list and type(seeds) is not dict:
@@ -662,22 +665,48 @@ def multicell_targets(
     else:
         starting_nodes = seeds
 
+    # loading receptor-gene links
+    if isinstance(receptor_grn, str):
+        from recon.loader import load_receptor_target, receptor_target_resources
+        if receptor_grn in receptor_target_resources:
+            receptor_grn = load_receptor_target(receptor_grn)
+        else:
+            try:
+                receptor_grn = pd.read_csv(receptor_grn, sep=None, engine='python')
+            except Exception as e:
+                raise ValueError("receptor_grn should be a valid resource name or a path to a csv file.") from e
+    if celltypes is None or len(celltypes) == 0:
+        raise ValueError("celltypes should be a non-empty list of celltype names.")
+    if type(celltypes) is list:
+        for i in range(len(celltypes)):
+            print(f"Processing celltype {i+1}/{len(celltypes)}: {celltypes[i]}")
+            if not isinstance(celltypes[i], Celltype):
+                celltypes[i] = Celltype(
+                    celltype_name=celltypes[i],
+                    grn_graph=grn,
+                    receptor_grn_bipartite=receptor_grn,
+                    receptor_graph=receptor_layer,
+                    grn_graph_directed=grn_graph_directed,
+                    grn_graph_weighted=grn_graph_weighted,
+                    receptor_grn_bipartite_graph_directed=receptor_grn_graph_directed,
+                    receptor_grn_bipartite_graph_weighted=receptor_grn_graph_weighted,
+                    receptor_graph_directed=receptor_graph_directed,
+                    receptor_graph_weighted=receptor_graph_weighted,
+                )
+        celltypes = {celltype.celltype_name: celltype for celltype in celltypes}
+
+    elif type(celltypes) is dict:
+        counter=0
+        for celltype in celltypes.keys():
+            print(f"Processing celltype {counter+1}/{len(celltypes)}: {celltype}")
+            if not isinstance(celltypes[celltype], Celltype):
+                celltypes[celltype] = Celltype(
+                    **celltypes[celltype]
+                )
+
+    # Create a generic multicell object to precompute the lambdas
     generic_multicell = Multicell(
-        celltypes={
-            celltype: Celltype(
-                receptor_graph=receptor_layer,
-                grn_graph=grn,
-                receptor_grn_bipartite=receptor_grn,
-                celltype_name=celltype,
-                receptor_graph_directed=receptor_graph_directed,
-                receptor_graph_weighted=receptor_graph_weighted,
-                grn_graph_directed=grn_graph_directed,
-                grn_graph_weighted=grn_graph_weighted,
-                receptor_grn_bipartite_graph_directed=receptor_grn_graph_directed,
-                receptor_grn_bipartite_graph_weighted=receptor_grn_graph_directed,
-            )
-            for celltype in celltypes
-        },
+        celltypes=celltypes,
         cell_communication_graph=ccc,
         cell_communication_graph_directed=cell_communication_graph_directed,
         cell_communication_graph_weighted=cell_communication_graph_weighted,
@@ -686,6 +715,7 @@ def multicell_targets(
         bipartite_cell_communication_receptor_directed=bipartite_cell_communication_receptor_directed,
         bipartite_cell_communication_receptor_weighted=bipartite_cell_communication_receptor_weighted,
         seeds=starting_nodes,
+        verbose=verbose
     )
 
     print("Computing intracellular contributions and direct effect...")
@@ -710,10 +740,10 @@ def multicell_targets(
         generic_multicell.lamb.loc[f"{celltype}_grn", f"{celltype}_grn"] = grn_proba
         generic_multicell.lamb.loc[f"{celltype}_grn", "cell_communication"] = 1 - grn_proba
     
-    multilayer = generic_multicell.Multixrank(restart_proba=restart_proba)
+    multilayer = generic_multicell.Multixrank(restart_proba=restart_proba, verbose=verbose if verbose>=2 else False)
     intracell = multilayer.random_walk_rank()
     intracell = intracell.sort_values(ascending=False, by="node")
-    intracell = intracell[intracell["layer"] == "grn"].set_index("node") 
+    intracell = intracell[intracell["layer"] == "gene"].set_index("node") 
     
     # Extracellular indirect regulations
     extracell = {}
@@ -741,7 +771,7 @@ def multicell_targets(
     # Precompute once (small/serializable)
     _targets = generic_multicell.multiplexes["cell_communication"]["layers"][0]["target"].unique()
 
-    def _compute_for_celltype(celltype):
+    def _compute_for_celltype(celltype, keep_layers=["gene"]):
         # Avoid shared mutable state: fresh instance per task
         gm = copy.deepcopy(generic_multicell)   # or create_multicell() if deepcopy is heavy
 
@@ -750,21 +780,22 @@ def multicell_targets(
         cell_seeds = cell_seeds[cell_seeds.index.isin(_targets)]
 
         gm.seeds = cell_seeds.to_dict()
-        multilayer = gm.Multixrank(restart_proba=restart_proba)
+        multilayer = gm.Multixrank(restart_proba=restart_proba, verbose=verbose if verbose>=2 else False)
 
-        df = (
-            multilayer.random_walk_rank()
-            .sort_values("node", ascending=False)
-            .query("layer == 'grn'")
-            .set_index("node")[["score", "multiplex"]]
-        )
+        if keep_layers is not None:
+            df = (
+                multilayer.random_walk_rank()
+                .sort_values("node", ascending=False)
+                .query("layer == 'gene'")
+                .set_index("node")[["score", "multiplex"]]
+            )
         df["score"] = df["score"] * cell_seeds.sum()
         return celltype, df  # tuple is easily pickled
 
     # n_jobs: tune to your machine; -1 = all cores
     njobs = min(njobs, len(celltypes)) if njobs > 0 else -1
     pairs = Parallel(n_jobs=njobs, verbose=10)(
-        delayed(_compute_for_celltype)(ct) for ct in tqdm.tqdm(celltypes)
+        delayed(_compute_for_celltype)(ct, keep_layers) for ct in tqdm.tqdm(celltypes)
     )
     extracell = dict(pairs)
 
@@ -787,8 +818,53 @@ def multicell_targets(
                     extracell[celltype_source]["multiplex"] == f"{celltype_target}_grn"
                 ]["score"]
 
-    return cell_contributions
+    for name, df in cell_contributions.items():
+        df.index = df.index.str.split("::").str[0]  # strip "::" + key name
+
+    cell_contributions = pd.concat(cell_contributions, axis=1)
+
+    return summarize_indirect_effects(cell_contributions)
 
 
-##########
+def summarize_indirect_effects(predictions):
 
+    celltypes = predictions.columns.levels[0].tolist()
+
+    indirect_effect = {}
+    direct_effect = {}
+    for celltype in celltypes:
+        indirect_effect[celltype] = predictions.loc[:, pd.IndexSlice[celltype, celltypes]]
+        direct_effect[celltype] = predictions.loc[:, pd.IndexSlice[celltype, celltype+'_direct']]
+
+    direct_effect = pd.concat(direct_effect, axis=1)
+    indirect_effect = pd.concat(indirect_effect, axis=1).droplevel(0, axis=1)
+    direct_effect.index.name = 'gene'
+    direct_effect.columns.name = 'celltype_target'
+    indirect_effect.index.name = 'gene'
+    indirect_effect.columns._names = ('celltype_target', 'celltype_source')
+
+    return direct_effect, indirect_effect
+
+
+def combine_effects(direct_effect, indirect_effect, alpha=0.8, cell_comm_matrix=None):
+
+    indirect_effect_summed = {}
+
+    if cell_comm_matrix is None:
+        for celltype in direct_effect:
+            direct_effect[celltype] = direct_effect[celltype]/direct_effect[celltype].sum()
+            indirect_effect_summed[celltype] = indirect_effect.loc[:, pd.IndexSlice[celltype, :]].sum(1) \
+                / indirect_effect.loc[:, pd.IndexSlice[celltype, :]].sum(1).sum() \
+                * direct_effect.loc[:, celltype].sum()
+
+    else:
+        cell_comm_matrix = cell_comm_matrix.div(cell_comm_matrix.sum(1), axis=0).fillna(0)
+        for celltype in direct_effect:
+            if celltype not in cell_comm_matrix.index:
+                raise ValueError(f"Cell type {celltype} not found in cell communication matrix index.")
+            indirect_effect[celltype] = indirect_effect[celltype].dot(cell_comm_matrix.loc[celltype])
+            indirect_effect[celltype] = indirect_effect[celltype]\
+                / indirect_effect[celltype].sum()\
+                * direct_effect[celltype].sum()
+
+    return (1 - alpha) * direct_effect + alpha * pd.DataFrame(indirect_effect_summed)
