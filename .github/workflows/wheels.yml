@@ -2,11 +2,9 @@ name: Wheels
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
   release:
     types: [published]
 
@@ -15,92 +13,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build_sdist:
-    name: Build SDist
+  build_artifacts:
+    name: Build sdist & universal wheel
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # Used to host cibuildwheel
       - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
 
-      - name: Install LAPACK (Linux only)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y liblapack-dev
-      - name: Build SDist
+      - name: Build
         run: |
+          python -m pip install --upgrade pip
           pip install --upgrade build twine packaging>=24.2
-          python -m build
+          python -m build  # produces dist/*.tar.gz and dist/*.whl (py3-none-any)
+
       - name: Check metadata
         run: python -m twine check dist/*
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cibw-sdist
-          path: dist/*.tar.gz
-
-  build_wheels:
-    name: Wheels on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-13, macos-14]
-
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install LAPACK (Linux only)
-        if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y liblapack-dev
-      - name: Build SDist
-        run: |
-          pip install build twine packaging>=24.2
-          python -m build --verbose
-      - uses: pypa/cibuildwheel@v2.21
-        env:
-          CIBW_BEFORE_BUILD: |
-            if [ -f /etc/os-release ]; then
-              if grep -q 'Ubuntu' /etc/os-release; then
-                echo "Running on Ubuntu";
-                apt-get update && \
-                apt-get install -y libblas-dev liblapack-dev gfortran g++ && \
-                apt-get clean;
-              elif grep -q 'CentOS' /etc/os-release; then
-                echo "Running on CentOS";
-                yum update -y && \
-                yum groupinstall -y "Development Tools" && \
-                yum install -y blas-devel lapack-devel gcc gcc-gfortran && \
-                yum clean all;
-              else
-                cat /etc/os-release
-                echo "Unsupported OS. Skipping LAPACK installation.";
-              fi
-            else
-              echo "/etc/os-release not found. Cannot determine the operating system.";
-            fi
-          CIBW_ARCHS_MACOS: auto universal2
-          SYSTEM_VERSION_COMPAT: 0
-          # Restrict builds to CPython 3.10 to 3.12
-          CIBW_BUILD: "cp310-* cp311-* cp312-*"
-          # Skip PyPy and musllinux builds
-          CIBW_SKIP: "*-musllinux* pp31*-macosx* pp*"
 
       - name: Verify clean directory
         run: git diff --exit-code
         shell: bash
 
-      - name: Upload wheels
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: cibw-wheels-${{ matrix.os }}
-          path: wheelhouse/*.whl
+          name: recon-dists
+          path: dist/*
 
   upload_all:
-    name: Upload if release
-    needs: [build_wheels, build_sdist]
+    name: Upload to PyPI (on release)
+    needs: [build_artifacts]
     runs-on: ubuntu-latest
     if: github.event_name == 'release' && github.event.action == 'published'
-
     steps:
       - uses: actions/setup-python@v5
         with:
@@ -108,9 +54,9 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          pattern: cibw-*
+          name: recon-dists
           path: dist
-          merge-multiple: true
+
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           user: __token__
