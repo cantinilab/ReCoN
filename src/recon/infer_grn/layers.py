@@ -12,7 +12,14 @@ from arboreto.algo import _prepare_input
 from arboreto.core import (EARLY_STOP_WINDOW_LENGTH, RF_KWARGS, SGBM_KWARGS,
                            infer_partial_network, to_tf_matrix)
 import circe as ci # atac layer
-from celloracle import motif_analysis as ma
+
+# CellOracle is optional (only needed for GRN inference with ATAC)
+try:
+    from celloracle import motif_analysis as ma
+    CELLORACLE_AVAILABLE = True
+except ImportError:
+    ma = None
+    CELLORACLE_AVAILABLE = False
 
 from tqdm import tqdm
 import numpy as np
@@ -201,6 +208,12 @@ def compute_tf_to_atac_links(
         DataFrame with columns ['source', 'target'] representing the
         TF-to-peak links.
     """
+    
+    if not CELLORACLE_AVAILABLE:
+        raise ImportError(
+            "CellOracle is required for ATAC-seq analysis. "
+            "Install with: pip install 'git+https://github.com/cantinilab/celloracle@lite'"
+        )
 
     # Create a DataFrame around the peak ids to run CellOracle motif search
     peaks_df = pd.concat([
@@ -302,6 +315,12 @@ def compute_atac_to_rna_links(atac, rna, ref_genome):
         DataFrame with columns ['source', 'target'] representing the
         peak-to-gene links.
     """
+    
+    if not CELLORACLE_AVAILABLE:
+        raise ImportError(
+            "CellOracle is required for ATAC-seq analysis. "
+            "Install with: pip install 'git+https://github.com/cantinilab/celloracle@lite'"
+        )
 
     # Get TSS information for the peaks
     peaks_annotated = ma.get_tss_info(

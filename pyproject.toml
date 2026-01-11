@@ -7,7 +7,7 @@ authors = [
 ]
 readme = "README.md"
 requires-python = ">=3.8"
-license = "AGPL-3.0"
+license = "GPL-3.0-only"
 keywords = ["recon", "multilayer", "single-cell", "treatment"]
 
 dependencies = [
@@ -20,7 +20,7 @@ dependencies = [
     "plotly",
     "arboreto",
     "matplotlib",
-    "circe-py>=0.3.9"
+    "circe-py>=0.3.9",
 ]
 
 [project.optional-dependencies]
