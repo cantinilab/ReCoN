@@ -13,7 +13,7 @@ keywords = ["recon", "multilayer", "single-cell", "treatment"]
 dependencies = [
     "numpy<2.0.0",
     "pandas",         # means any version
-    "hummuspy",
+    "hummuspy @ git+https://github.com/cantinilab/hummus@dask_update#subdirectory=hummuspy",  # "hummuspy>=0.1.8",
     "multixrank",
     "scanpy",
     "scipy",
@@ -40,11 +40,13 @@ requires = ["setuptools>=61.0", "wheel", "numpy", "Cython"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-package-dir = {"" = "src"}   # root of packages is "src"
+# Root of packages is "src"
+package-dir = {"" = "src"}
+include-package-data = true
 
 [tool.setuptools.package-data]
 # Include any package data files if needed
-# recon = ["data/*.json"]
+recon = ["data/**/*.parquet",] # "data/**/*.csv", "data/**/*.h5ad"] 
 
 [tool.pytest.ini_options]
 minversion = "6.0"
