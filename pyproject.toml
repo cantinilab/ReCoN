@@ -24,9 +24,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-grn = [
-  "celloracle @ git+https://github.com/cantinilab/celloracle@lite"
+grn-lite = [
+    "celloracle-lite>=0.21.0"
 ]
+# grn = [
+#   "celloracle @ git+https://github.com/cantinilab/celloracle@lite"
+# ]
 
 [project.urls]
 Homepage = "https://recon.readthedocs.io"
