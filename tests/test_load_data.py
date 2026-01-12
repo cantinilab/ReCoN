@@ -6,7 +6,8 @@ Tests the receptor gene loading functionality.
 
 import pytest
 import pandas as pd
-from recon.data.load_data import load_receptor_genes, receptor_gene_resources
+from recon.data.load_data import load_receptor_genes, receptor_gene_resources, fetch_tutorial_data
+import os
 
 
 class TestReceptorGeneResources:
@@ -155,3 +156,25 @@ class TestDataIntegration:
         # Most should not end with _receptor (that's added later)
         non_suffixed = sum(1 for r in sample_receptors if not r.endswith("_receptor"))
         assert non_suffixed >= 5  # Most should be plain names
+
+
+class TestFetchTutorialData:
+    """Test fetch_tutorial_data function with the smallest file."""
+
+    def test_fetch_smallest_file(self, tmp_path):
+        """Test downloading the smallest tutorial file."""
+        # Define the smallest file to test
+        smallest_file = "perturbation_tuto/rna.h5ad"
+        
+        # Temporary directory for testing
+        test_data_dir = tmp_path / "data"
+        test_data_dir.mkdir()
+
+        # Fetch the file
+        file_path = fetch_tutorial_data(smallest_file, data_dir=str(test_data_dir))
+
+        # Check if the file exists
+        assert os.path.exists(file_path)
+
+        # Check if the file is not empty
+        assert os.path.getsize(file_path) > 0
