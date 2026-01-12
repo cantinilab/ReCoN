@@ -31,6 +31,13 @@ grn-lite = [
 # grn = [
 #   "celloracle @ git+https://github.com/cantinilab/celloracle@lite"
 # ]
+tutorials = [
+    "pooch",  # for downloading tutorial data from Zenodo
+]
+grn-lite-tutorials = [
+    "celloracle-lite>=0.21.0",  # grn-lite dependency
+    "pooch"  # tutorials dependency
+]
 
 [project.urls]
 Homepage = "https://recon.readthedocs.io"
