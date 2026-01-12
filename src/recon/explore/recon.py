@@ -9,6 +9,7 @@ from typing import Union, List, Tuple, Dict, Any
 import warnings
 
 import copy
+import recon.plot
 
 
 class Celltype:
@@ -134,15 +135,19 @@ class Celltype:
                 receptor_grn_bipartite = pd.read_csv(
                     receptor_grn_bipartite, sep=None, engine='python')
             
-            receptor_grn_bipartite["source"] = receptor_grn_bipartite["source"] + "_receptor"
-
             receptor_graph = pd.DataFrame({
                 "source": receptor_grn_bipartite.loc[:, 'source'].unique(),
-                "target": ["fake_receptor" for r in range(
+                "target": ["fake" for r in range(
                     len(receptor_grn_bipartite.loc[:, 'source'].unique()))]
                 }
             )
-
+        
+        # Add "_receptor" suffix to receptor nodes
+        receptor_graph['source'] = receptor_graph['source'] + "_receptor"
+        receptor_graph['target'] = receptor_graph['target'] + "_receptor"
+        receptor_grn_bipartite['source'] = \
+            receptor_grn_bipartite['source'] + "_receptor"
+        
         # Format multiplex dictionary
         self.multiplexes = {
             celltype_name + "_receptor": {
@@ -205,6 +210,23 @@ class Celltype:
             No seeds provided to explore the multilayer, all the scoree will be null (np.nan).
             You can pass it as an argument earlier or set up the .seeds attribute.
             """)
+        
+        # Swap source/target for multixrank compatibility (temporary copy)
+        # This keeps internal representation biological but passes multixrank the format it expects
+        multiplexes_for_multixrank = {}
+        for key, value in self.multiplexes.items():
+            # Create copy with swapped columns
+            layer_copy = value["layers"][0].rename(
+                columns={"source": "target", "target": "source"}, inplace=False)
+            # Add network_key column (needed by hummuspy)
+            layer_copy["network_key"] = key
+            
+            multiplexes_for_multixrank[key] = {
+                "names": value["names"],
+                "graph_type": value["graph_type"],
+                "layers": [layer_copy]
+            }
+        
         # if seeds are provided as a dictionary
         if isinstance(self.seeds, dict):
             # Every value should be a numeric value (int or float)
@@ -217,7 +239,7 @@ class Celltype:
             print("Creating a multixrank object with seeds as a dictionary.")
             # Create the multixrank object
             multilayer = hummuspy.create_multilayer.Multixrank(
-                multiplex=self.multiplexes,
+                multiplex=multiplexes_for_multixrank,
                 bipartite=self.bipartites,
                 lamb=self.lamb.values.T,
                 seeds=[],
@@ -253,7 +275,7 @@ class Celltype:
 
             # Create the multixrank object
             multilayer = hummuspy.create_multilayer.Multixrank(
-                multiplex=self.multiplexes,
+                multiplex=multiplexes_for_multixrank,
                 bipartite=self.bipartites,
                 lamb=self.lamb.values.T,
                 seeds=self.seeds,
@@ -439,6 +461,7 @@ class Multicell(Celltype):
         cell_communication_graph["source"] = cell_communication_graph["source"] + '-' + cell_communication_graph["celltype_source"]
         cell_communication_graph["target"] = cell_communication_graph["target"] + '-' + cell_communication_graph["celltype_target"]
         cell_communication_graph.rename(columns={"lr_means": "weight"}, inplace=True)
+        cell_communication_graph["network_key"] = "cell_communication"
 
         self.multiplexes = {
             "cell_communication": {
@@ -452,6 +475,11 @@ class Multicell(Celltype):
         for celltype in self.celltypes_names:
             self.multiplexes.update(celltypes[celltype].multiplexes)
             self.bipartites.update(celltypes[celltype].bipartites)
+        
+        # Add network_key column to all multiplex layers for sankey plots
+        for key in self.multiplexes:
+            if "network_key" not in self.multiplexes[key]["layers"][0].columns:
+                self.multiplexes[key]["layers"][0]["network_key"] = key
         
         # Update nodes of each celtype to add a celltype specific suffix
         for celltype in self.celltypes_names:
@@ -472,11 +500,6 @@ class Multicell(Celltype):
                     self.bipartites[bipartite]["edge_list_df"]["col1"] = \
                         self.bipartites[bipartite]["edge_list_df"]["col1"] + \
                             "::" + celltype
-
-        # Inverse source and target to match multixrank error
-        for multiplex in self.multiplexes:
-            self.multiplexes[multiplex]["layers"][0].rename(
-                columns={"source": "target", "target": "source"}, inplace=True)
 
         # Prepare lamb matrix if not provided
         if lamb is None:
@@ -530,7 +553,7 @@ class Multicell(Celltype):
 
         lamb = self.lamb
 
-        illustrate_multicell(
+        recon.plot.illustrate_multicell(
             lamb=lamb,
             figsize=figsize,
             azim=azim,
@@ -541,6 +564,35 @@ class Multicell(Celltype):
             alpha_layers=alpha_layers,
             cell_communication_layer_name=cell_communication_layer_name
         )
+
+
+def format_multicell_results(
+    multicell_multixrank_results,
+    celltypes: List[str],
+    keep_layers: Union[str, List[str]]="gene",
+    split: str="::"
+):
+    """Format multicellular multixrank results as gene profiles per cell type.
+
+    Args:
+        multicell_multixrank_results: Results from multicellular multixrank random walk.
+        celltypes: List of cell types included in the multicellular analysis.
+        keep_layers: Layers to keep in the output profiles. Can be "gene", "grn", or a list of specific layers.
+        split: Delimiter used to separate gene names and cell type names in the node identifiers.
+
+    Returns:
+        DataFrame with cell types as columns,  genes as rows, and random walk with restart scores as values.
+    """
+
+    cell_type_profiles = multicell_multixrank_results[multicell_multixrank_results['layer'].str.contains(keep_layers)]
+    cell_type_profiles[['gene', 'celltype']] = cell_type_profiles['node'].str.split(split, expand=True)
+    cell_type_profiles = cell_type_profiles[cell_type_profiles['celltype'].isin(celltypes)]
+    cell_type_profiles = cell_type_profiles[['celltype', 'gene', 'score']]
+
+    # pivot to have genes as index and cell types as columns
+    cell_type_profiles = cell_type_profiles.pivot(index='gene', columns='celltype', values='score')
+
+    return cell_type_profiles
 
 
 def set_lambda(
