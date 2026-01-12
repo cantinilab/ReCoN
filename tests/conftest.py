@@ -10,7 +10,8 @@ def simple_grn():
     return pd.DataFrame({
         'source': ['TF1', 'TF1', 'TF2'],
         'target': ['GENE1', 'GENE2', 'GENE2'],
-        'weight': [0.8, 0.6, 0.7]
+        'weight': [0.8, 0.6, 0.7],
+        'network_key': ['gene', 'gene', 'gene']
     })
 
 
@@ -42,5 +43,6 @@ def simple_cell_communication():
         'target': ['RECEPTOR1', 'RECEPTOR2'],
         'celltype_source': ['CellA', 'CellB'],
         'celltype_target': ['CellB', 'CellA'],
-        'lr_means': [0.5, 0.6]
+        'lr_means': [0.5, 0.6],
+        'network_key': ['cell_communication', 'cell_communication']
     })
