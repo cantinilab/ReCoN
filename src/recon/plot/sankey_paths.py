@@ -66,7 +66,7 @@ def get_celltype_grn_receptor_bipartite(
 def get_celltype_gene_layer(
     multicell_obj,
     cell_type: str,
-    layer_name: str = "grn",
+    layer_name: str = "gene",
     as_dataframe: bool = True
 ) -> Union[pd.DataFrame, nx.DiGraph, nx.Graph]:
     """
@@ -225,9 +225,9 @@ def get_cell_communication_layer(
     df.loc[:, "source_std"] = df.loc[:, "source"].astype(str).apply(_standardize_name)
     df.loc[:, "target_std"] = df.loc[:, "target"].astype(str).apply(_standardize_name)
 
-    # 2) By convention:  source_std → ligand,  target_std → receptor (before adding suffix)
-    df.loc[:, "receptor"] = df.loc[:, "source_std"]
-    df.loc[:, "ligand"] = df.loc[:, "target_std"]
+    # 2) By convention:  source_std → ligand (sender),  target_std → receptor (receiver)
+    df.loc[:, "ligand"] = df.loc[:, "source_std"]
+    df.loc[:, "receptor"] = df.loc[:, "target_std"]
 
     # 3) Build receptor_clean by inserting "_receptor" before "::"
     def _add_receptor_suffix(x: str) -> str:
@@ -313,7 +313,9 @@ def get_top_tfs(
         sorted by descending score, limited to the top‐n rows.
     """
 
-    results = results_df.copy()
+    results = results_df.sort_values(by="score", ascending=False)
+    if results.empty:
+        return results
     results.loc[:, "celltype"] = results["multiplex"].str.split("_", expand=True)[0]
     results = results[results["celltype"]==cell_type]
 
@@ -350,7 +352,9 @@ def get_top_receptors(
         limited to the top‐n rows.
     """
 
-    results = results_df.copy()
+    results = results_df.sort_values(by="score", ascending=False)
+    if results.empty:
+        return results
     results.loc[:, "celltype"] = results.loc[:, "multiplex"].str.split("_", expand=True)[0]
     results = results[results["celltype"]==cell_type]
     
@@ -416,7 +420,9 @@ def get_top_ligands(
         raise KeyError("`receptor_ligand_df` must contain a column named 'ligand'.")
 
     # 2) Restrict to just the "cell_communication" rows
+    
     cc_scores = results_df.loc[results_df["multiplex"] == "cell_communication", :].copy()
+    cc_scores = cc_scores.sort_values(by="score", ascending=False)
     if cc_scores.empty:
         return cc_scores  # nothing to do if that multiplex is absent
 
@@ -471,7 +477,7 @@ def get_top_ligands(
 
 
 def extract_gene_tf_pairs(
-    tf_gene_layer, top_tfs, seeds
+    tf_gene_layer, top_tfs, seeds, verbose: bool = False
 ) -> pd.DataFrame:
     """
     Given a tf_gene_layer DataFrame (from get_celltype_grn_receptor_bipartite or
@@ -495,6 +501,9 @@ def extract_gene_tf_pairs(
             • "node" e.g. "GENE_TF::Endothelial cell"
     seeds : list or pd.Index
         List of gene names (in the form "GENE::CellType") to filter for.
+    verbose : bool, default=False
+        If True, print debugging information about filtering.
+    
     Returns
     -------
     pandas.DataFrame
@@ -503,18 +512,49 @@ def extract_gene_tf_pairs(
             gene ∈ seeds.
     """
 
-    sources_list = seeds.tolist()
-    targets_list = list(top_tfs["node"].values)
+    genes_list = seeds.tolist()
+    tfs_list = list(top_tfs["node"].values)
 
-    print(targets_list)
-    # (2) Now filter tf_gene_layer for rows where both ‘source’ ∈ sources_list AND ‘target’ ∈ targets_list:
+    if verbose:
+        print(f"\n[extract_gene_tf_pairs] === INPUT ===")
+        print(f"  Input genes: {len(genes_list)} - {genes_list[:3]}")
+        print(f"  Input TFs: {len(tfs_list)} - {tfs_list[:3]}")
+        print(f"\n[extract_gene_tf_pairs] === TF-GENE LAYER ===")
+        print(f"  Shape: {tf_gene_layer.shape}")
+        print(f"  Columns: {tf_gene_layer.columns.tolist()}")
+        print(f"  Unique sources (TFs): {tf_gene_layer['source'].nunique()}")
+        print(f"  Unique targets (genes): {tf_gene_layer['target'].nunique()}")
+        print(f"  Sample rows (first 3):")
+        print(tf_gene_layer.head(3).to_string(index=False))
+
+    # FIXED: TFs are in source, genes are in target (biological direction)
     filtered_df = tf_gene_layer[
-        tf_gene_layer["source"].isin(sources_list) &
-        tf_gene_layer["target"].isin(targets_list)
-    ]
-    filtered_df.columns = ["gene", "tf", "weight", "network_key"]
+        tf_gene_layer["source"].isin(tfs_list) &
+        tf_gene_layer["target"].isin(genes_list)
+    ].copy()
+    
+    if verbose:
+        print(f"\n[extract_gene_tf_pairs] === FILTERING RESULT ===")
+        print(f"  Filtered pairs: {len(filtered_df)} rows")
+        if len(filtered_df) == 0:
+            print(f"  ⚠️  WARNING: No TF-gene pairs found!")
+            # Check overlap
+            tfs_in_layer = set(tf_gene_layer['source'].unique())
+            genes_in_layer = set(tf_gene_layer['target'].unique())
+            tf_overlap = set(tfs_list).intersection(tfs_in_layer)
+            gene_overlap = set(genes_list).intersection(genes_in_layer)
+            print(f"  TFs found in layer: {len(tf_overlap)}/{len(tfs_list)}")
+            if tf_overlap:
+                print(f"    Examples: {list(tf_overlap)[:3]}")
+            print(f"  Genes found in layer: {len(gene_overlap)}/{len(genes_list)}")
+            if gene_overlap:
+                print(f"    Examples: {list(gene_overlap)[:3]}")
+        else:
+            print(f"  Sample filtered pairs (first 3):")
+            print(filtered_df[['source', 'target', 'weight']].head(3).to_string(index=False))
+    
+    filtered_df = filtered_df.rename(columns={"source": "tf", "target": "gene"})
     filtered_df.loc[:, 'tf_clean'] = filtered_df['tf'].str.replace('_TF', '', regex=False)
-
 
     return filtered_df
 
@@ -522,7 +562,8 @@ def extract_gene_tf_pairs(
 def extract_receptor_tf_pairs(
     receptor_gene_layer,
     top_tfs,
-    top_receptors
+    top_receptors,
+    verbose: bool = False
 ) -> pd.DataFrame:
 
     """
@@ -555,6 +596,8 @@ def extract_receptor_tf_pairs(
         Subset of results_df for multiplex=="cell_communication", with column:
             • "node" e.g. "GENE_receptor::Endothelial cell" or "GENE-receptor-Endothelial cell"
             or "GENE::Endothelial cell"
+    verbose : bool, default=False
+        If True, print debugging information about filtering.
 
     Returns
     -------
@@ -563,28 +606,59 @@ def extract_receptor_tf_pairs(
             tf ∈ standardized(top_tfs["node"])  AND
             receptor ∈ standardized(top_receptors["node"]).
     """
+    tfs_list = list(top_tfs["node"].values)
+    tfs_list_clean = ["".join(e.split("_TF")) for e in tfs_list]
+    
+    receptors_list = list(top_receptors["node"].values)
 
-    sources_list = list(top_tfs["node"].values)
-    sources_list = ["".join(e.split("_TF")) for e in sources_list]
+    if verbose:
+        print(f"\n[extract_receptor_tf_pairs] === INPUT ===")
+        print(f"  Input TFs: {len(tfs_list)} - {tfs_list[:3]}")
+        print(f"  Input TFs (cleaned): {tfs_list_clean[:3]}")
+        print(f"  Input receptors: {len(receptors_list)} - {receptors_list[:3]}")
+        print(f"\n[extract_receptor_tf_pairs] === BIPARTITE LAYER ===")
+        print(f"  Shape: {receptor_gene_layer.shape}")
+        print(f"  Columns: {receptor_gene_layer.columns.tolist()}")
+        print(f"  Unique col1 (genes/TFs): {receptor_gene_layer['col1'].nunique()}")
+        print(f"  Unique col2 (receptors): {receptor_gene_layer['col2'].nunique()}")
+        print(f"  Sample rows (first 3):")
+        print(receptor_gene_layer.head(3).to_string(index=False))
 
-    targets_list = list(top_receptors["node"].values)
-
-    print(sources_list)
-    print(targets_list)
-    # (2) Now filter tf_gene_layer for rows where both ‘source’ ∈ sources_list AND ‘target’ ∈ targets_list:
+    # FIXED: col2=receptors, col1=genes/TFs (actual data structure!)
     filtered_df = receptor_gene_layer[
-        receptor_gene_layer.loc[:, "col1"].isin(sources_list) &
-        receptor_gene_layer.loc[:, "col2"].isin(targets_list)
-    ]
+        receptor_gene_layer.loc[:, "col2"].isin(receptors_list) &
+        receptor_gene_layer.loc[:, "col1"].isin(tfs_list_clean)
+    ].copy()
 
-    filtered_df.columns = ["receptor", "tf", "weight", "network_key"]
+    if verbose:
+        print(f"\n[extract_receptor_tf_pairs] === FILTERING RESULT ===")
+        print(f"  Filtered pairs: {len(filtered_df)} rows")
+        if len(filtered_df) == 0:
+            print(f"  ⚠️  WARNING: No receptor-TF pairs found!")
+            # Check overlap
+            genes_in_layer = set(receptor_gene_layer['col1'].unique())
+            receptors_in_layer = set(receptor_gene_layer['col2'].unique())
+            tf_overlap = set(tfs_list_clean).intersection(genes_in_layer)
+            receptor_overlap = set(receptors_list).intersection(receptors_in_layer)
+            print(f"  TFs (genes) found in layer: {len(tf_overlap)}/{len(tfs_list_clean)}")
+            if tf_overlap:
+                print(f"    Examples: {list(tf_overlap)[:3]}")
+            print(f"  Receptors found in layer: {len(receptor_overlap)}/{len(receptors_list)}")
+            if receptor_overlap:
+                print(f"    Examples: {list(receptor_overlap)[:3]}")
+        else:
+            print(f"  Sample filtered pairs (first 3):")
+            print(filtered_df[['col1', 'col2', 'weight']].head(3).to_string(index=False))
+
+    filtered_df = filtered_df.rename(columns={"col2": "receptor", "col1": "tf"})
     return filtered_df
 
 
 def extract_receptor_ligand_pairs(
     receptor_ligand_df: pd.DataFrame,
     top_ligands_df: pd.DataFrame,
-    top_receptors_df: pd.DataFrame
+    top_receptors_df: pd.DataFrame,
+    verbose: bool = False
 ) -> pd.DataFrame:
     """
     Given a receptor–ligand DataFrame (ligand_receptor_df) and two “top‐N” DataFrames
@@ -614,6 +688,8 @@ def extract_receptor_ligand_pairs(
     top_receptors_df : pandas.DataFrame
         Subset of results_df for, e.g., "Fibroblast_receptor", with column:
           • "node"   e.g. "FLT1_receptor::Fibroblast" or "FLT1-Fibroblast" or "FLT1::Fibroblast"
+    verbose : bool, default=False
+        If True, print debugging information about filtering.
 
     Returns
     -------
@@ -652,6 +728,20 @@ def extract_receptor_ligand_pairs(
     raw_rec_nodes = top_receptors_df.loc[:, "node"].astype(str)
     standardized_recs = set(raw_rec_nodes.apply(_std_receptor))
 
+    if verbose:
+        print(f"\n[extract_receptor_ligand_pairs] === INPUT ===")
+        print(f"  Input ligands: {len(top_ligands_df)}")
+        if len(top_ligands_df) > 0:
+            print(f"    Examples: {top_ligands_df['node'].head(3).tolist()}")
+        print(f"  Input receptors: {len(top_receptors_df)}")
+        if len(top_receptors_df) > 0:
+            print(f"    Examples: {top_receptors_df['node'].head(3).tolist()}")
+        print(f"\n[extract_receptor_ligand_pairs] === RECEPTOR-LIGAND LAYER ===")
+        print(f"  Shape: {receptor_ligand_df.shape}")
+        print(f"  Columns: {receptor_ligand_df.columns.tolist()}")
+        print(f"  Sample rows (first 3):")
+        print(receptor_ligand_df.head(3).to_string(index=False))
+
     # 3) Filter receptor_ligand_df:
     #    Keep only rows where ligand ∈ standardized_ligs AND receptor ∈ standardized_recs
     mask = (
@@ -659,7 +749,29 @@ def extract_receptor_ligand_pairs(
         receptor_ligand_df.loc[:, "receptor"].isin(standardized_recs)
     )
     
-    return receptor_ligand_df.loc[mask].reset_index(drop=True)
+    filtered = receptor_ligand_df.loc[mask].reset_index(drop=True)
+    
+    if verbose:
+        print(f"\n[extract_receptor_ligand_pairs] === FILTERING RESULT ===")
+        print(f"  Filtered pairs: {len(filtered)} rows")
+        if len(filtered) == 0:
+            print(f"  ⚠️  WARNING: No receptor-ligand pairs found!")
+            # Check overlap
+            ligands_in_layer = set(receptor_ligand_df['ligand'].unique())
+            receptors_in_layer = set(receptor_ligand_df['receptor'].unique())
+            ligand_overlap = standardized_ligs.intersection(ligands_in_layer)
+            receptor_overlap = standardized_recs.intersection(receptors_in_layer)
+            print(f"  Ligands found in layer: {len(ligand_overlap)}/{len(standardized_ligs)}")
+            if ligand_overlap:
+                print(f"    Examples: {list(ligand_overlap)[:3]}")
+            print(f"  Receptors found in layer: {len(receptor_overlap)}/{len(standardized_recs)}")
+            if receptor_overlap:
+                print(f"    Examples: {list(receptor_overlap)[:3]}")
+        else:
+            print(f"  Sample filtered pairs (first 3):")
+            print(filtered[['ligand', 'receptor', 'weight']].head(3).to_string(index=False))
+    
+    return filtered
 
 
 def build_partial_networks(
@@ -673,7 +785,8 @@ def build_partial_networks(
     top_tf_n: int = 10,
     before_top_n: int = 5,
     per_celltype: bool = True,
-    include_before_cells: bool = False
+    include_before_cells: bool = False,
+    verbose: bool = False
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Construct partial or full network layers needed for Sankey plots.
@@ -703,13 +816,14 @@ def build_partial_networks(
     receptor_ligand_top = extract_receptor_ligand_pairs(
         receptor_ligand_df=cc_df,
         top_ligands_df=top_ligands,
-        top_receptors_df=top_receptors
+        top_receptors_df=top_receptors,
+        verbose=verbose
     )
 
     tf_gene_df = get_celltype_gene_layer(
         multicell_obj=multicell_obj,
         cell_type=cell_type,
-        layer_name="grn",
+        layer_name="gene",
         as_dataframe=True
     )
 
@@ -720,8 +834,8 @@ def build_partial_networks(
     )
 
     seeds_prefixed = pd.Series([f"{gene}::{cell_type}" for gene in seeds])
-    gene_tf_pairs = extract_gene_tf_pairs(tf_gene_df, top_tfs, seeds_prefixed)
-    receptor_tf_pairs = extract_receptor_tf_pairs(receptor_tf_df, top_tfs, top_receptors)
+    gene_tf_pairs = extract_gene_tf_pairs(tf_gene_df, top_tfs, seeds_prefixed, verbose=verbose)
+    receptor_tf_pairs = extract_receptor_tf_pairs(receptor_tf_df, top_tfs, top_receptors, verbose=verbose)
 
     if not include_before_cells:
         # Return empty frames for before-layers
@@ -742,7 +856,7 @@ def build_partial_networks(
         before_top_receptors = get_top_receptors(results, cell_type=before_cell_type, n=before_top_n)
         before_top_tfs = get_top_tfs(results, cell_type=before_cell_type, n=before_top_n)
 
-        before_tf_gene_df = get_celltype_gene_layer(multicell_obj, before_cell_type, "grn", as_dataframe=True)
+        before_tf_gene_df = get_celltype_gene_layer(multicell_obj, before_cell_type, "gene", as_dataframe=True)
         before_receptor_tf_df = get_celltype_grn_receptor_bipartite(multicell_obj, before_cell_type, as_dataframe=True)
 
         before_gene_tf_pairs = extract_gene_tf_pairs(
@@ -863,7 +977,7 @@ def plot_3layer_sankey(
     if save_path:
         fig.write_html(save_path)
 
-    fig.show(renderer="notebook")
+    fig.show()
 
 
 def plot_4layer_sankey(
@@ -934,18 +1048,30 @@ def plot_4layer_sankey(
 
     if flow.lower() == "downstream":
         for df in [l_r, r_t, t_g]:
-            df[["source", "target"]] = df[["target", "source"]]
+            if len(df) > 0:
+                df[["source", "target"]] = df[["target", "source"]]
 
-    l_r["color"] = assign_group_colors(l_r, "source")
-    r_t["color"] = "rgba(100,200,100,1)"
-    t_g["color"] = "rgba(100,200,100,1)"
+    # Only assign colors to non-empty DataFrames
+    if len(l_r) > 0:
+        l_r["color"] = assign_group_colors(l_r, "source")
+    if len(r_t) > 0:
+        r_t["color"] = "rgba(100,200,100,1)"
+    if len(t_g) > 0:
+        t_g["color"] = "rgba(100,200,100,1)"
 
     for df in [l_r, r_t, t_g]:
         total = df["value"].sum()
         if total > 0:
             df["value"] /= total
 
-    links = pd.concat([l_r, r_t, t_g], ignore_index=True)
+    # Filter out empty DataFrames
+    non_empty_dfs = [df for df in [l_r, r_t, t_g] if len(df) > 0]
+    
+    if len(non_empty_dfs) == 0:
+        print("Warning: All networks are empty. Cannot generate Sankey plot.")
+        return
+    
+    links = pd.concat(non_empty_dfs, ignore_index=True)
 
     all_nodes = pd.unique(links[["source", "target"]].values.ravel())
     node_idx = {name: i for i, name in enumerate(all_nodes)}
@@ -1025,7 +1151,7 @@ def plot_4layer_sankey(
     if save_path:
         fig.write_html(save_path)
 
-    fig.show(renderer="notebook")
+    fig.show()
 
 
 def plot_6layer_sankey(
@@ -1078,18 +1204,31 @@ def plot_6layer_sankey(
         unique_types = df[column].str.extract(r"::(.+)$")[0].fillna("Unknown")
         return unique_types.apply(lambda ct: hex_to_rgba(string_to_color(ct)))
 
-    br_bt.loc[:, "color"] = assign_group_colors(br_bt, "source")
-    bt_l.loc[:, "color"] = assign_group_colors(bt_l, "source")
-    l_r.loc[:, "color"] = "rgba(160,160,160,0.4)"
-    r_t.loc[:, "color"] = "rgba(100,200,100,1)"
-    t_g.loc[:, "color"] = "rgba(100,200,100,1)"
+    # Only assign colors to non-empty DataFrames
+    if len(br_bt) > 0:
+        br_bt.loc[:, "color"] = assign_group_colors(br_bt, "source")
+    if len(bt_l) > 0:
+        bt_l.loc[:, "color"] = assign_group_colors(bt_l, "source")
+    if len(l_r) > 0:
+        l_r.loc[:, "color"] = "rgba(160,160,160,0.4)"
+    if len(r_t) > 0:
+        r_t.loc[:, "color"] = "rgba(100,200,100,1)"
+    if len(t_g) > 0:
+        t_g.loc[:, "color"] = "rgba(100,200,100,1)"
 
     for df in [br_bt, bt_l, l_r, r_t, t_g]:
         total = df["value"].sum()
         if total > 0:
             df["value"] /= total
 
-    links = pd.concat([br_bt, bt_l, l_r, r_t, t_g], ignore_index=True)
+    # Filter out empty DataFrames before concatenation
+    non_empty_dfs = [df for df in [br_bt, bt_l, l_r, r_t, t_g] if len(df) > 0]
+    
+    if len(non_empty_dfs) == 0:
+        print("Warning: All networks are empty. Cannot generate Sankey plot.")
+        return
+    
+    links = pd.concat(non_empty_dfs, ignore_index=True)
 
     all_nodes = pd.unique(links[["source", "target"]].values.ravel())
     node_idx = {name: i for i, name in enumerate(all_nodes)}
@@ -1167,7 +1306,7 @@ def plot_6layer_sankey(
     if save_path:
         fig.write_html(save_path)
 
-    fig.show(renderer="notebook")
+    fig.show()
 
 
 def plot_intracell_sankey(
@@ -1178,6 +1317,7 @@ def plot_intracell_sankey(
     top_receptor_n: int = 30,
     top_tf_n: int = 10,
     flow="upstream",
+    verbose: bool = False,
     save_path=None
 ):
     """
@@ -1202,6 +1342,8 @@ def plot_intracell_sankey(
     flow : str, default="upstream"
         If "upstream", plot receptor → TF → gene.
         If "downstream", plot gene → TF → receptor.
+    verbose : bool, default=False
+        If True, print detailed debugging information about network construction.
     save_path : str or None, default=None
         If provided, save the figure as an HTML file to this path.
 
@@ -1217,7 +1359,8 @@ def plot_intracell_sankey(
         ligand_cells=[],
         top_receptor_n=top_receptor_n,
         top_tf_n=top_tf_n,
-        include_before_cells=False
+        include_before_cells=False,
+        verbose=verbose
     )
 
     networks = {
@@ -1248,6 +1391,7 @@ def plot_ligand_sankey(
     top_tf_n: int = 10,
     per_celltype: bool = True,
     flow="upstream",
+    verbose: bool = False,
     save_path=None
 ):
     """
@@ -1279,6 +1423,8 @@ def plot_ligand_sankey(
     flow : str, default="upstream"
         If "upstream", plot ligand → receptor → TF → gene.
         If "downstream", plot gene → TF → receptor → ligand.
+    verbose : bool, default=False
+        If True, print detailed debugging information about network construction.
     save_path : str or None, default=None
         If provided, save the figure as an HTML file to this path.
 
@@ -1296,7 +1442,8 @@ def plot_ligand_sankey(
         top_receptor_n=top_receptor_n,
         top_tf_n=top_tf_n,
         per_celltype=per_celltype,
-        include_before_cells=False
+        include_before_cells=False,
+        verbose=verbose
     )
 
     networks = {
@@ -1332,6 +1479,7 @@ def plot_intercell_sankey(
     before_top_n: int = 5,
     per_celltype: bool = True,
     flow="upstream",
+    verbose: bool = False,
     save_path=None
 ):
     """
@@ -1365,6 +1513,8 @@ def plot_intercell_sankey(
     flow : str, default="upstream"
         If "upstream", plot upstream receptor → upstream TF → ligand → receptor → TF → gene.
         If "downstream", plot gene → TF → receptor → ligand → upstream TF → upstream receptor.
+    verbose : bool, default=False
+        If True, print detailed debugging information about network construction.
     save_path : str or None, default=None
         If provided, save the figure as an HTML file to this path.
 
@@ -1384,7 +1534,8 @@ def plot_intercell_sankey(
         top_tf_n=top_tf_n,
         before_top_n=before_top_n,
         per_celltype=per_celltype,
-        include_before_cells=True
+        include_before_cells=True,
+        verbose=verbose
     )
 
     networks = {
