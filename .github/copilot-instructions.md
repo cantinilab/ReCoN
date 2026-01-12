@@ -35,9 +35,11 @@ RWR exploration (via hummuspy/multixrank) → Treatment effect scores → Visual
 ### Network Representation
 
 - All networks are **pandas DataFrames** with columns: `source`, `target`, `weight` (optional)
-- Node naming convention for multicell: `{gene_name}::{celltype_name}` to avoid conflicts
-- Receptor nodes: `{receptor_name}_receptor` suffix
-- Cell communication nodes: `{ligand_name}-{celltype_source}` format
+- Node naming conventions:
+  - **Multicell genes**: `{gene_name}::{celltype_name}` (double colon) to avoid conflicts between cell types
+  - **Receptors**: `{receptor_name}_receptor` suffix (underscore)
+  - **Cell communication ligands**: `{ligand_name}-{celltype_source}` (hyphen) format
+- These suffixes are automatically added during object construction - do NOT add them manually to input DataFrames
 
 ### Graph Types Encoding
 
@@ -56,12 +58,38 @@ Each `Celltype` has two layers in multilayer network:
 `Multicell` adds:
 4. **cell_communication layer**: Ligand-receptor pairs across cell types
 
+### HuMMuS Layer Roles
+
+ReCoN uses the **HuMMuS methodology** (Trimbour et al., 2024) for GRN inference, which structures regulation across multiple biological layers:
+
+1. **TF layer**: Transcription factors that regulate gene expression
+2. **DNA layer**: Regulatory regions (ATAC-seq peaks) where TFs bind
+3. **Gene layer**: Target genes regulated by TFs through DNA binding
+
+The multilayer structure captures:
+- **TF → DNA links**: From motif scanning (CellOracle) - where TFs can bind
+- **DNA → Gene links**: From peak-gene associations (CIRCE) - which peaks regulate which genes
+- **TF → Gene links**: From expression correlation (GRNBoost2/Arboreto) - overall regulatory relationships
+
+Random walk across these layers integratesindirect (TF→DNA→Gene) regulatory evidence, improving GRN quality compared to single-layer approaches. It also allows walks within layers (e.g., TF-TF interactions) to capture co-regulation.
+
 ### Transition Matrices (lamb & eta)
 
 - **lamb**: Layer-to-layer transition probability matrix (DataFrame)
-  - Default: Allow transitions within GRN and receptor→GRN
+  - Format: `lamb[i, j]` = probability of transition **FROM layer i TO layer j**
+  - Default for Celltype: Allows transitions within GRN layer and from receptor→GRN
+  - Example customization:
+    ```python
+    # Block transitions from GRN to receptor layer
+    lamb.loc["Tcell_grn", "Tcell_receptor"] = 0
+    # Increase self-loop probability in receptor layer
+    lamb.loc["Tcell_receptor", "Tcell_receptor"] = 0.5
+    ```
+  - Rows must sum to =1 (restart is considered outside this matrix)
+  These probabilties govern how random walks traverse between layers, and can be changed dpeending on biological assumptions and questions.
 - **eta**: Restart probability per layer (Series)
   - Controls where RWR "restarts" (typically uniform across layers)
+  - Must sum to 1.0 across all layers
 
 ## Key Dependencies
 
@@ -77,14 +105,22 @@ Each `Celltype` has two layers in multilayer network:
 ### Installation
 
 ```bash
-# Standard installation
+# Standard installation (recommended)
 conda create -n recon python=3.10
 conda activate recon
-pip install recon[grn]
+pip install recon[grn-lite]
 
-# Without GRN dependencies (newer Python versions)
+# Without GRN dependencies (Python 3.8-3.12)
 pip install recon
 ```
+
+**Python version constraints**:
+- **Minimum**: Python ≥3.8 (for core ReCoN functionality)
+- **GRN inference**: Python ≥3.10 AND ≤3.10 (tight constraint)
+  - `circe-py` (ATAC-seq peak-gene links) requires Python ≥3.10
+  - `celloracle` + `gimmemotifs` (TF-DNA motif scanning) require Python ≤3.10
+  - **Result**: Must use exactly Python 3.10 for full GRN inference with ATAC-seq
+- **Python 3.11+**: Works for core ReCoN (no GRN inference) but celloracle not compatible
 
 **Common installation issues**:
 
@@ -119,6 +155,24 @@ ct = recon.explore.Celltype(
 )
 ```
 
+**Creating a Multicell object:**
+```python
+# From Celltype objects
+mc = recon.explore.Multicell(
+    celltypes=[ct_a, ct_b],  # or dict: {"NewName": ct_a, ...}
+    cell_communication_graph=ccn_df  # columns: source, target, celltype_source, celltype_target, lr_means
+)
+
+# From dictionaries (celltypes created internally)
+mc = recon.explore.Multicell(
+    celltypes=[
+        {"celltype_name": "Tcell", "grn_graph": grn_df, "receptor_grn_bipartite": rec_df},
+        {"celltype_name": "Bcell", "grn_graph": grn_df2, "receptor_grn_bipartite": rec_df2}
+    ],
+    cell_communication_graph=ccn_df
+)
+```
+
 **Running RWR:**
 ```python
 ct.seeds = ["GENE1", "GENE2"]  # or dict with weights
@@ -139,6 +193,19 @@ scores = multilayer.extract_multilayer_pagerank_scores()
 pytest tests/              # Run all tests
 pytest tests/ -v          # Verbose output
 pytest tests/test_celltype.py  # Specific file
+```
+
+**Optional dependencies**: Some tests (e.g., `test_infer_grn.py` ATAC-seq tests) require `celloracle` + reference genomes and are skipped when unavailable:
+```bash
+# Install celloracle
+pip install 'git+https://github.com/cantinilab/celloracle@lite'
+
+# Install reference genome (mm10 for mouse)
+pip install genomepy
+genomepy install mm10 UCSC --annotation  # Stored in ~/.local/share/genomes/
+
+# Now previously-skipped tests will run
+pytest tests/test_infer_grn.py -v
 ```
 
 ### Test Structure
@@ -198,23 +265,40 @@ ReCoN/
 
 ## Packaging & Distribution
 
-### PyPI Publishing Constraint
+### PyPI Publishing Workflow
 
-**Critical**: PyPI does not allow direct Git dependencies. The `celloracle@git+https://github.com/cantinilab/celloracle@lite` dependency in `[grn]` extras causes upload failures.
+ReCoN uses GitHub Actions (`.github/workflows/wheels.yml`) for automated PyPI publishing:
+- **Trigger**: Automatically publishes on GitHub releases
+- **Build**: Creates universal wheel (`py3-none-any`) and source distribution
+- **Authentication**: Uses PyPI API token (stored in `secrets.pypi_password`)
 
-Current error from wheels.yml GitHub Action:
+```yaml
+# Key workflow steps:
+python -m build              # Build distributions
+twine check dist/*           # Validate metadata
+gh-action-pypi-publish       # Upload to PyPI
 ```
-ERROR HTTPError: 400 Bad Request from https://upload.pypi.org/legacy/
-Can't have direct dependency: celloracle@ git+https://github.com/cantinilab/celloracle@lite
+
+### Dependency Management Constraint
+
+**Critical**: PyPI does not allow direct Git dependencies. The project uses `celloracle-lite>=0.21.0` (PyPI package) instead of Git URLs.
+
+Current `pyproject.toml` structure:
+```toml
+[project.optional-dependencies]
+grn-lite = [
+    "celloracle-lite>=0.21.0"
+]
+# grn = [
+#   "celloracle @ git+https://github.com/cantinilab/celloracle@lite"
+# ]
+
+[project.urls]
+Homepage = "https://recon.readthedocs.io"
+Repository = "https://github.com/cantinilab/recon"
 ```
 
-**Workarounds**:
-1. Document celloracle installation separately in README (current approach)
-2. Users install via: `pip install recon` then manually `pip install git+https://...`
-3. Consider contributing celloracle-lite as separate PyPI package
-4. Use Trusted Publisher workflow (no API tokens) - see warning in GitHub Actions logs
-
-When modifying dependencies, **never add Git URLs to required or optional dependencies** if PyPI publishing is needed.
+**Status**: PyPI now accepts `celloracle-lite` as a PyPI package dependency (changed from Git URL in v0.1.0). The commented-out `grn` extras with Git URL is deprecated.
 
 ## Citations
 
