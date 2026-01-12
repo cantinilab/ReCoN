@@ -3,3 +3,9 @@ src/recon.egg-info/*
 
 docs/build/*
 
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
