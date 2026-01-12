@@ -12,7 +12,7 @@
 
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :hidden:
    :glob:
    :caption: ReCoN explained
@@ -20,7 +20,7 @@
    recon_explained/*
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :hidden:
    :glob:
    :caption: Examples
@@ -142,7 +142,7 @@ The parameter
 See how to use ReCoN to model the effect of a drug here : :doc:`Predicting treatment effects in multicellular systems <recon_examples/1.recon_molecular_treatment>`.
 
 🧫 Understanding multicellular program coordination
----------------------------------------------------
+----------------------------------------------------
 How are the surrounding cells regulating and impacted by the state of a given cell-type ?
 ReCoN can be used to explore the causes and consequences of a given cell/multicellular state.
 
@@ -167,7 +167,7 @@ and the possibility to identify new potential targets at different regulatory le
 See how to use ReCoN to explore intracellular regulatory elements here : :doc:`Exploring molecular cascades and identify regulators <recon_examples/3.recon_molecular_cascades>`.
 
 🧬 Building GRNs through HuMMuS methodology
--------------------------------------
+--------------------------------------------
 
 We previously developped HuMMuS (Trimbour et al., 2024), an other method based on heterogeneous multilayer networks to build gene regulatory networks from single-cell RNA-seq and ATAC-seq data.
 HuMMuS can be used as a standalone method, but it was initially developed as an hybrid package with R and Python.
@@ -197,4 +197,19 @@ If you also use ReCoN to generate GRNs, please cite:
    Trimbour R., Ramirez Flores R. O., Saez Rodriguez J., Cantini L. (2025). ReCoN: Reconstructing multicellular models by integrating gene regulatory and cell communication networks. *bioRxiv*. https://doi.org/10.1101/2025.09.20.461080
   
    Trimbour R., Deutschmann I. M., Cantini L. (2024). HuMMuS: Inferring gene regulatory networks through heterogeneous multilayer networks. *Bioinformatics*, 40(3), btae143. https://doi.org/10.1093/bioinformatics/btae143
+
+.. note::
+   To download the tutorial data, use the following commands:
+
+   **All tutorial data:**
+   .. code-block:: python
+
+      from recon.data import fetch_all_tutorial_data
+      fetch_all_tutorial_data(data_dir='./data')
+
+   **Specific file (e.g., RNA data):**
+   .. code-block:: python
+
+      from recon.data import fetch_tutorial_data
+      fetch_tutorial_data('perturbation_tuto/rna.h5ad', data_dir='./data')
 
