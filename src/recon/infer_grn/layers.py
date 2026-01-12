@@ -413,4 +413,4 @@ def generate_grn(
         n_jobs=n_jobs
     )
 
-    return ranking.compute()  # only if dask branch
+    return ranking  # only if dask branch
