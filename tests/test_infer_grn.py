@@ -447,3 +447,300 @@ class TestCelloracleMocked:
                 rna=rna,
                 ref_genome='mm10'
             )
+
+
+class TestComputeRnaNetworkExtended:
+    """Extended tests for compute_rna_network with more edge cases."""
+    
+    def test_with_string_temp_dir(self):
+        """Test that temp_dir can be provided as string."""
+        import tempfile
+        
+        df_exp = pd.DataFrame(
+            np.random.rand(30, 5),
+            columns=[f'GENE{i}' for i in range(5)]
+        )
+        tf_names = ['GENE0', 'GENE1']
+        
+        with tempfile.TemporaryDirectory() as tmp:
+            result = compute_rna_network(
+                df_exp_mtx=df_exp,
+                tf_names=tf_names,
+                temp_dir=tmp,  # String, not Path
+                method='GBM',
+                n_cpu=1
+            )
+            
+            assert isinstance(result, pd.DataFrame)
+            assert 'source' in result.columns
+            assert 'target' in result.columns
+            assert 'weight' in result.columns
+    
+    def test_with_nonexistent_temp_dir(self):
+        """Test that nonexistent temp_dir is created."""
+        import tempfile
+        
+        df_exp = pd.DataFrame(
+            np.random.rand(30, 5),
+            columns=[f'GENE{i}' for i in range(5)]
+        )
+        tf_names = ['GENE0', 'GENE1']
+        
+        with tempfile.TemporaryDirectory() as tmp:
+            nonexistent = Path(tmp) / "subdir" / "temp"
+            assert not nonexistent.exists()
+            
+            result = compute_rna_network(
+                df_exp_mtx=df_exp,
+                tf_names=tf_names,
+                temp_dir=nonexistent,
+                method='GBM',
+                n_cpu=1
+            )
+            
+            assert isinstance(result, pd.DataFrame)
+    
+    def test_different_seeds_give_different_results(self):
+        """Test that different seeds produce different results."""
+        df_exp = pd.DataFrame(
+            np.random.rand(50, 8),
+            columns=[f'GENE{i}' for i in range(8)]
+        )
+        tf_names = ['GENE0', 'GENE1']
+        
+        result1 = compute_rna_network(
+            df_exp_mtx=df_exp,
+            tf_names=tf_names,
+            method='GBM',
+            n_cpu=1,
+            seed=42
+        )
+        
+        result2 = compute_rna_network(
+            df_exp_mtx=df_exp,
+            tf_names=tf_names,
+            method='GBM',
+            n_cpu=1,
+            seed=999
+        )
+        
+        # Results should differ with different seeds
+        # (at least some weights should be different)
+        weights_differ = not np.allclose(
+            result1['weight'].values,
+            result2['weight'].values
+        )
+        assert weights_differ
+    
+    def test_output_columns_correct(self):
+        """Test that output has correct column names."""
+        df_exp = pd.DataFrame(
+            np.random.rand(30, 5),
+            columns=[f'GENE{i}' for i in range(5)]
+        )
+        tf_names = ['GENE0']
+        
+        result = compute_rna_network(
+            df_exp_mtx=df_exp,
+            tf_names=tf_names,
+            method='GBM',
+            n_cpu=1
+        )
+        
+        assert list(result.columns) == ['source', 'target', 'weight']
+    
+    def test_with_single_tf(self):
+        """Test network inference with only one TF."""
+        df_exp = pd.DataFrame(
+            np.random.rand(40, 6),
+            columns=[f'GENE{i}' for i in range(6)]
+        )
+        tf_names = ['GENE0']  # Only one TF
+        
+        result = compute_rna_network(
+            df_exp_mtx=df_exp,
+            tf_names=tf_names,
+            method='RF',
+            n_cpu=1
+        )
+        
+        assert isinstance(result, pd.DataFrame)
+        assert len(result) > 0
+        # All sources should be the single TF
+        assert all(result['source'] == 'GENE0')
+
+
+class TestComputeTfNetworkExtended:
+    """Extended tests for compute_tf_network edge cases."""
+    
+    def test_with_empty_tfs_list(self):
+        """Test behavior with empty TFs list."""
+        rna = ad.AnnData(
+            X=np.random.rand(10, 3),
+            var=pd.DataFrame(index=['GENE1', 'GENE2', 'GENE3'])
+        )
+        tfs_list = []
+        
+        result = compute_tf_network(rna, tfs_list, method=None)
+        
+        assert isinstance(result, pd.DataFrame)
+        assert len(result) == 0
+    
+    def test_with_all_tfs_missing(self):
+        """Test when none of the TFs exist in genes."""
+        rna = ad.AnnData(
+            X=np.random.rand(10, 3),
+            var=pd.DataFrame(index=['GENE1', 'GENE2', 'GENE3'])
+        )
+        tfs_list = ['TF1', 'TF2', 'TF3']  # None exist
+        
+        result = compute_tf_network(rna, tfs_list, method=None)
+        
+        assert isinstance(result, pd.DataFrame)
+        assert len(result) == 0
+    
+    def test_tf_suffix_added_correctly(self):
+        """Test that _TF suffix is added correctly."""
+        rna = ad.AnnData(
+            X=np.random.rand(10, 3),
+            var=pd.DataFrame(index=['Foxp3', 'Nfkb1', 'GENE1'])
+        )
+        tfs_list = ['Foxp3', 'Nfkb1']
+        
+        result = compute_tf_network(rna, tfs_list, method=None)
+        
+        assert len(result) == 2
+        assert 'Foxp3_TF' in result['source'].values
+        assert 'Nfkb1_TF' in result['source'].values
+        assert all(result['target'] == 'fake_TF')
+
+
+class TestGenerateGrn:
+    """Tests for generate_grn function."""
+    
+    def test_generate_grn_basic(self):
+        """Test basic GRN generation."""
+        from recon.infer_grn.layers import generate_grn
+        
+        # Create minimal networks
+        rna_network = pd.DataFrame({
+            'source': ['TF1_TF', 'TF2_TF'],
+            'target': ['GENE1', 'GENE2'],
+            'weight': [0.8, 0.6]
+        })
+        
+        atac_network = pd.DataFrame({
+            'source': ['PEAK1', 'PEAK2'],
+            'target': ['PEAK1', 'PEAK2'],
+            'weight': [1.0, 1.0]
+        })
+        
+        tf_network = pd.DataFrame({
+            'source': ['TF1_TF', 'TF2_TF'],
+            'target': ['fake_TF', 'fake_TF']
+        })
+        
+        tf_to_atac = pd.DataFrame({
+            'source': ['TF1_TF', 'TF2_TF'],
+            'target': ['PEAK1', 'PEAK2']
+        })
+        
+        atac_to_rna = pd.DataFrame({
+            'source': ['PEAK1', 'PEAK2'],
+            'target': ['GENE1', 'GENE2']
+        })
+        
+        result = generate_grn(
+            rna_network=rna_network,
+            atac_network=atac_network,
+            tf_network=tf_network,
+            tf_to_atac_links=tf_to_atac,
+            atac_to_rna_links=atac_to_rna,
+            n_jobs=1
+        )
+        
+        assert result is not None
+        # Result should be a DataFrame from HuMMuS
+        assert hasattr(result, '__len__')
+    
+    def test_generate_grn_renames_bipartite_columns(self):
+        """Test that bipartite columns are renamed correctly."""
+        from recon.infer_grn.layers import generate_grn
+        
+        # Ensure the function doesn't crash with column renaming
+        rna_network = pd.DataFrame({
+            'source': ['TF1_TF'],
+            'target': ['GENE1'],
+            'weight': [0.9]
+        })
+        
+        atac_network = pd.DataFrame({
+            'source': ['PEAK1'],
+            'target': ['PEAK1'],
+            'weight': [1.0]
+        })
+        
+        tf_network = pd.DataFrame({
+            'source': ['TF1_TF'],
+            'target': ['fake_TF']
+        })
+        
+        tf_to_atac = pd.DataFrame({
+            'source': ['TF1_TF'],
+            'target': ['PEAK1']
+        })
+        
+        atac_to_rna = pd.DataFrame({
+            'source': ['PEAK1'],
+            'target': ['GENE1']
+        })
+        
+        # Should not raise error
+        result = generate_grn(
+            rna_network=rna_network,
+            atac_network=atac_network,
+            tf_network=tf_network,
+            tf_to_atac_links=tf_to_atac,
+            atac_to_rna_links=atac_to_rna,
+            n_jobs=1
+        )
+        
+        assert result is not None
+
+
+class TestEdgeCases:
+    """Test edge cases and boundary conditions."""
+    
+    def test_compute_rna_network_with_many_cpus(self):
+        """Test that n_cpu parameter works with multiple cores."""
+        df_exp = pd.DataFrame(
+            np.random.rand(50, 6),
+            columns=[f'GENE{i}' for i in range(6)]
+        )
+        tf_names = ['GENE0', 'GENE1']
+        
+        result = compute_rna_network(
+            df_exp_mtx=df_exp,
+            tf_names=tf_names,
+            method='GBM',
+            n_cpu=2,  # Use 2 CPUs
+            seed=42
+        )
+        
+        assert isinstance(result, pd.DataFrame)
+        assert len(result) > 0
+    
+    def test_compute_tf_network_with_tf_prefix_already_present(self):
+        """Test when gene names already have _TF suffix."""
+        rna = ad.AnnData(
+            X=np.random.rand(10, 3),
+            var=pd.DataFrame(index=['Foxp3_TF', 'GENE1', 'GENE2'])
+        )
+        # TF list without suffix
+        tfs_list = ['Foxp3_TF']
+        
+        result = compute_tf_network(rna, tfs_list, method=None)
+        
+        # Should add another _TF suffix
+        assert len(result) == 1
+        assert result['source'].iloc[0] == 'Foxp3_TF_TF'

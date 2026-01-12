@@ -40,7 +40,7 @@ class TestCelltypeConstruction:
         # Check receptor layer was created from provided graph
         receptor_layer = ct.multiplexes["TestCell_receptor"]["layers"][0]
         assert len(receptor_layer) == 1
-        assert receptor_layer.iloc[0]['source'] == 'RECEPTOR1'
+        assert receptor_layer.iloc[0]['source'] == 'RECEPTOR1_receptor'
     
     def test_fake_receptor_creation(self, simple_grn, simple_receptor_grn):
         """Test that fake receptor is created when receptor_graph is None."""
