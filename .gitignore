@@ -9,3 +9,8 @@ __pycache__/
 *$py.class
 *.pyc
 
+# Tutorial data (download via recon.data.fetch_tutorial_data)
+data/perturbation_tuto/*.h5ad
+data/perturbation_tuto/*.csv
+data/build_grn_tuto/*.h5mu
+
