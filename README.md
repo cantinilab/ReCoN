@@ -38,7 +38,7 @@ ReCoN is available as a Python package and can be installed through pip.
 ```bash
 conda create -n recon python=3.10
 conda activate recon
-pip install recon[grn]
+pip install recon[grn-lite]
 ```
 
 ⚠️ **To generate GRNs**, ReCoN requires **CellOracle** and **HuMMuS**.  

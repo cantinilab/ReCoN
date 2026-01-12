@@ -33,7 +33,7 @@ You'll need cmake, gimmemotifs, and llvmlite to install ReCoN with full GRN infe
     conda activate recon-dev
     
     # Install ReCoN with GRN extras
-    pip install recon[grn]
+    pip install recon[grn-lite]
 
 **Why these dependencies?**
 
@@ -154,7 +154,7 @@ This is expected when the genome isn't downloaded. To run ATAC-seq tests:
 
 CellOracle dependency uses a Git URL which isn't allowed on PyPI. Options:
 
-1. Make it optional via ``pip install recon[grn]``
+1. Make it optional via ``pip install recon[grn-lite]``
 2. Users can install separately: ``pip install 'git+https://github.com/cantinilab/celloracle@lite'``
 3. Contribute celloracle-lite to PyPI as standalone package
 

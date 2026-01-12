@@ -72,7 +72,7 @@ ReCoN is available as a Python package and can be installed through pip.
 
    conda create -n recon python=3.10
    conda activate recon
-   pip install recon[grn]
+   pip install recon[grn-lite]
 
 If you are generating your grn externally, you can install ReCoN without the GRN dependencies.:raw-html:`<br />`
 *You should then be able to use more recent version of Python.*
@@ -84,7 +84,7 @@ If you are generating your grn externally, you can install ReCoN without the GRN
 ⚠️ **To generate GRNs**, ReCoN requires **CellOracle** to be installed.
 Since CellOracle requires quite old dependency versions, we propose to install our
 `own lite branch <https://github.com/cantinilab/CellOracle>`_ that contains 
-only the necessary functions through the code "recon[grn]".
+only the necessary functions through the code "recon[grn-lite]".
 
 .. admonition:: Installation troubleshooting & Frequently asked questions
    :class: warning
