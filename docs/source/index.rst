@@ -27,6 +27,13 @@
 
    recon_examples/*
 
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+   :glob:
+   :caption: API Reference
+
+   API/*
 
 Welcome to ReCoN's documentation!
 ==================================
@@ -202,12 +209,14 @@ If you also use ReCoN to generate GRNs, please cite:
    To download the tutorial data, use the following commands:
 
    **All tutorial data:**
+   
    .. code-block:: python
 
       from recon.data import fetch_all_tutorial_data
       fetch_all_tutorial_data(data_dir='./data')
 
    **Specific file (e.g., RNA data):**
+   
    .. code-block:: python
 
       from recon.data import fetch_tutorial_data
