@@ -13,7 +13,7 @@ keywords = ["recon", "multilayer", "single-cell", "treatment"]
 dependencies = [
     "numpy<2.0.0",
     "pandas",         # means any version
-    "hummuspy @ git+https://github.com/cantinilab/hummus@dask_update#subdirectory=hummuspy",  # "hummuspy>=0.1.8",
+    "hummuspy @ git+https://github.com/cantinilab/hummus@dask_update#subdirectory=hummuspy",  # "hummuspy>=0.1.9",
     "multixrank",
     "scanpy",
     "scipy",
@@ -21,6 +21,7 @@ dependencies = [
     "arboreto",
     "matplotlib",
     "circe-py>=0.3.9",
+    "nbformat>=4.2.0"
 ]
 
 [project.optional-dependencies]
