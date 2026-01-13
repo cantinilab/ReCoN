@@ -21,7 +21,8 @@ dependencies = [
     "arboreto",
     "matplotlib",
     "circe-py>=0.3.9",
-    "nbformat>=4.2.0"
+    "nbformat>=4.2.0",
+    "liana"
 ]
 
 [project.optional-dependencies]
