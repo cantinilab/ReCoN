@@ -74,7 +74,6 @@ ReCoN can be used to address several biological questions, including:
 ---------------
 
 ReCoN is available as a Python package and can be installed through pip. 
-⚠️ *Actually, not yet but very very soon ! for now, check the github :)*
 
 ..  code-block:: python
 

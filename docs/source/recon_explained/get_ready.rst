@@ -24,13 +24,42 @@ Or install from source for development:
 Installation with GRN inference (optional)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+You'll need gimmemotifs<=0.17.2, celloracle (lite branch), and llvmlite to install ReCoN with full GRN inference capabilities.
+
+..  code-block:: bash
+
+    # Create environment with required dependencies
+    conda create -n recon  python=3.10
+    conda activate recon
+    
+    # Install ReCoN with GRN extras
+    pip install recon[grn-lite]
+
+
+Installation with macOS
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Some packages may be tricky to install with pip on macOS due to system library dependencies. We recommend using conda to manage these dependencies: gimmemotifs and llvmlite
+
+..  code-block:: bash
+
+    # Create environment with required dependencies
+    conda create -n recon -c bioconda -c conda-forge python=3.10 gimmemotifs llvmlite cmake
+
+    conda activate recon
+    
+    # Install ReCoN with GRN extras
+    pip install recon[grn-lite]
+
+
+
 You'll need cmake, gimmemotifs, and llvmlite to install ReCoN with full GRN inference capabilities including ATAC-seq motif scanning.
 
 ..  code-block:: bash
 
     # Create environment with required dependencies
-    conda create -n recon-dev -c bioconda -c conda-forge python=3.10 gimmemotifs llvmlite cmake
-    conda activate recon-dev
+    conda create -n recon -c bioconda -c conda-forge python=3.10 gimmemotifs llvmlite cmake
+    conda activate recon
     
     # Install ReCoN with GRN extras
     pip install recon[grn-lite]
@@ -150,13 +179,13 @@ This is expected when the genome isn't downloaded. To run ATAC-seq tests:
     # Run tests
     pytest tests/test_infer_grn.py -v
 
-**Problem: PyPI upload fails with "Direct dependencies not allowed"**
+**Problem: I cannot compute GRNs**
 
-CellOracle dependency uses a Git URL which isn't allowed on PyPI. Options:
+CellOracle is required for GRN inference with ATAC-seq data. Options:
 
-1. Make it optional via ``pip install recon[grn-lite]``
-2. Users can install separately: ``pip install 'git+https://github.com/cantinilab/celloracle@lite'``
-3. Contribute celloracle-lite to PyPI as standalone package
+1. Install our 'lite' branch direclty with recon: ``pip install recon[grn-lite]``
+2. Install it separately: ``pip install 'git+https://github.com/cantinilab/celloracle@lite'``
+3. Compute your GRN externally and provide it to ReCoN.
 
 **Problem: Tests are skipped for celloracle functions**
 
@@ -291,7 +320,7 @@ Possible reasons:
 
 1. **Disconnected components**: Gene not reachable from seeds in network
 2. **Low edge weights**: Weak connections filtered out
-3. **High alpha**: Treatment didn't diffuse far enough (try lower alpha)
+3. **High restart probability**: Treatment didn't diffuse far enough (try lower restart probability)
 4. **Missing edges**: Incomplete GRN (add more regulatory links)
 
 ReCoN interpretation
@@ -314,8 +343,8 @@ ReCoN helps answer:
 - **Which genes are affected** by a treatment beyond direct targets?
 - **How do cell types coordinate** their responses?
 - **What off-target effects** might occur?
-- **Which combinations** of perturbations could be synergistic?
 - **Why do some cells respond** differently than others?
+- **And maybe your own biological question!** :)
 
 How to compare conditions?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
