@@ -123,21 +123,22 @@ The multilayer (TFs, DNA regions, target genes) is then processed to infer the f
 
 If you use ReCoN, please cite:
 
-> Trimbour, R., Cantini, L. (2025).  
+> Trimbour R., Ramirez Flores R. O., Saez Rodriguez J., Cantini L. (2025).  
 > **ReCoN: Reconstructing multicellular models by integrating gene regulatory and cell communication networks.**  
-> *bioRxiv*. https://doi.org/10.1101/2025.09.20.461080
+> *bioRxiv*. https://doi.org/_________
 
 If you also use ReCoN to generate GRNs, cite:
 
 > Trimbour R., Ramirez Flores R. O., Saez Rodriguez J., Cantini L. (2025).  
 > **ReCoN: Reconstructing multicellular models by integrating gene regulatory and cell communication networks.**  
-> *bioRxiv*. https://doi.org/10.1101/2025.09.20.461080  
+> *bioRxiv*. https://doi.org/_________  
 >
 > Trimbour R., Deutschmann I. M., Cantini L. (2024).  
 > **HuMMuS: Inferring gene regulatory networks through heterogeneous multilayer networks.**  
 > *Bioinformatics*, 40(3), btae143. https://doi.org/10.1093/bioinformatics/btae143  
 
 ---
+
 
 
 
