@@ -73,7 +73,8 @@ ReCoN can be used to address several biological questions, including:
 📦 Installation
 ---------------
 
-ReCoN is available as a Python package and can be installed through pip.
+ReCoN is available as a Python package and can be installed through pip. 
+⚠️ *Actually, not yet but very very soon ! for now, check the github :)*
 
 ..  code-block:: python
 
@@ -194,14 +195,14 @@ If you use ReCoN in your work, please cite:
 .. admonition:: Cite ReCoN
    :class: seealso
 
-   Trimbour, R., Cantini, L. (2025). ReCoN: Reconstructing multicellular models by integrating gene regulatory and cell communication networks. *bioRxiv*. https://doi.org/10.1101/2025.09.20.461080
+   Trimbour R., Ramirez Flores R. O., Saez Rodriguez J., Cantini L. (2025). ReCoN: Reconstructing multicellular models by integrating gene regulatory and cell communication networks. *bioRxiv*. https://doi.org/___________
 
 If you also use ReCoN to generate GRNs, please cite:
 
 .. admonition:: Cite HuMMuS
    :class: seealso
 
-   Trimbour R., Ramirez Flores R. O., Saez Rodriguez J., Cantini L. (2025). ReCoN: Reconstructing multicellular models by integrating gene regulatory and cell communication networks. *bioRxiv*. https://doi.org/10.1101/2025.09.20.461080
+   Trimbour R., Ramirez Flores R. O., Saez Rodriguez J., Cantini L. (2025). ReCoN: Reconstructing multicellular models by integrating gene regulatory and cell communication networks. *bioRxiv*. https://doi.org/___________
   
    Trimbour R., Deutschmann I. M., Cantini L. (2024). HuMMuS: Inferring gene regulatory networks through heterogeneous multilayer networks. *Bioinformatics*, 40(3), btae143. https://doi.org/10.1093/bioinformatics/btae143
 
