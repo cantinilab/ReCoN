@@ -12,8 +12,8 @@ keywords = ["recon", "multilayer", "single-cell", "treatment"]
 
 dependencies = [
     "numpy<2.0.0",
-    "pandas",         # means any version
-    "hummuspy @ git+https://github.com/cantinilab/hummus@dask_update#subdirectory=hummuspy",  # "hummuspy>=0.1.9",
+    "pandas",
+    "hummuspy>=0.1.9",
     "multixrank",
     "scanpy",
     "scipy",
@@ -29,9 +29,6 @@ dependencies = [
 grn-lite = [
     "celloracle-lite>=0.21.0"
 ]
-# grn = [
-#   "celloracle @ git+https://github.com/cantinilab/celloracle@lite"
-# ]
 tutorials = [
     "pooch",  # for downloading tutorial data from Zenodo
 ]
@@ -41,7 +38,7 @@ grn-lite-tutorials = [
 ]
 
 [project.urls]
-Homepage = "https://recon.readthedocs.io"
+Homepage = "https://recon-doc.readthedocs.io"
 Repository = "https://github.com/cantinilab/recon"
 
 [build-system]
