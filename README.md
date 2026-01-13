@@ -52,7 +52,7 @@ conda create -n recon python=3.12
 pip install recon
 ```
 > 📖 For installation issues, dependency conflicts, or runtime errors,  
-> please check our dedicated [**Troubleshooting and FAQs guide**](docs/source/recon_explained/get_ready.rst).
+> please check our dedicated [**Troubleshooting and FAQ guide**](https://recon-doc.readthedocs.io/en/latest/recon_explained/get_ready.html).
 
 
 ---
@@ -74,7 +74,7 @@ It captures:
 - **Direct effect** — caused by *direct binding* of receptors of a cell type  
 - **Indirect effect** — mediated by *other cell types* secreting ligands that modulate the focal cell  
 
-ReCoN models these with random walk with restart (RWR).  
+ReCoN models these with random walk with restarts (RWR).  
 The parameter `α ∈ [0, 1]` sets the weight of the **direct effect** (`α`) vs **indirect effect** (`1-α`).
 
 <p align="center">
@@ -111,7 +111,7 @@ This provides a comprehensive view of regulation and helps identify new targets.
 
 ## 🧬 Building GRNs with HuMMuS
 
-HuMMuS (Trimbour et al., 2024) is a multilayer network method to build GRNs from single-cell RNA-seq and ATAC-seq.  
+HuMMuS (Trimbour et al., 2024) is a multilayer network method to build GRNs from single-cell RNA-seq and single-cell ATAC-seq.  
 
 ReCoN integrates a Python implementation of HuMMuS, using CellOracle for prior TF–DNA–gene links.  
 The multilayer (TFs, DNA regions, target genes) is then processed to infer the final GRN.
@@ -137,6 +137,7 @@ If you also use ReCoN to generate GRNs, cite:
 > *Bioinformatics*, 40(3), btae143. https://doi.org/10.1093/bioinformatics/btae143  
 
 ---
+
 
 
 
