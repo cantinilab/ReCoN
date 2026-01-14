@@ -5,7 +5,7 @@ SPHINXOPTS    ?=
 SPHINXBUILD   ?= sphinx-build
 SOURCEDIR     = source
 BUILDDIR      = build
-PYTHON        ?= python3
+PYTHON        ?= python
 
 # Convert Plotly outputs before building
 .PHONY: plotly
