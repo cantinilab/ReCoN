@@ -67,7 +67,10 @@ ReCoN can be used to address several biological questions, including:
    - :doc:`Predicting treatment effects in multicellular systems <recon_examples/1.recon_molecular_treatment>`
    - :doc:`Understanding multicellular program coordination <recon_examples/2.recon_multicellular_coordination>`
    - :doc:`Exploring intracellular and intercellular regulatory mechanisms <recon_examples/3.recon_molecular_cascades>`
-   - :doc:`Build GRNs through HuMMuS methodology <recon_examples/4.recon_hummus>`
+   - **GRN generation**:
+
+     - :doc:`Build GRNs from scRNA-seq + scATAC-seq through HuMMuS methodology <recon_examples/4.recon_hummus>`
+     - :doc:`Build GRNs from scRNA-seq only with GRNBoost2 <recon_examples/5.recon_grnboost>`
 
 
 📦 Installation
@@ -123,10 +126,10 @@ through **cell communication** interplays.
 
 
 ReCoN models these two components through different random walk with restart (RWR) processes
-on the multicellular network (cf. :doc:`ReCoN overview and algorithm <recon_explained/overview>`). 
-The parameter 
+on the multicellular network (cf. :doc:`ReCoN overview and algorithm <recon_explained/overview>`).
+The parameter
 :math:`\alpha \in [0, 1]` allows to tune the relative importance of the direct and indirect effects.
-:math:`\alpha` is the weight of the direct effect, while :math:`1 - \alpha` is the weight of the indirect effect.
+:math:`\alpha` is the weight of the **indirect** effect, while :math:`1 - \alpha` is the weight of the **direct** effect.
 
 .. image:: ../../figures/indirect_direct_effect_formula.png
    :alt: ReCoN-direct-indirect-effect-formula Remi-Trimbour 2025
@@ -173,8 +176,12 @@ and the possibility to identify new potential targets at different regulatory le
 
 See how to use ReCoN to explore intracellular regulatory elements here : :doc:`Exploring molecular cascades and identify regulators <recon_examples/3.recon_molecular_cascades>`.
 
-🧬 Building GRNs through HuMMuS methodology
---------------------------------------------
+🧬 GRN generation
+------------------
+
+ReCoN GRNs can be built from single-cell data in two ways, depending on what data is available.
+
+**With paired scRNA-seq + scATAC-seq — HuMMuS methodology**
 
 We previously developped HuMMuS (Trimbour et al., 2024), an other method based on heterogeneous multilayer networks to build gene regulatory networks from single-cell RNA-seq and ATAC-seq data.
 HuMMuS can be used as a standalone method, but it was initially developed as an hybrid package with R and Python.
@@ -184,6 +191,13 @@ This implementation leverages the functions of CellOracle to build the prior kno
 HuMMuS is then applied on a multilayer composed of a TF layer, a DNA region layer and a target gene layer to infer the final GRN.
 
 See how to use ReCoN to build GRNs with HuMMuS here : :doc:`Building gene regulatory networks with HuMMuS <recon_examples/4.recon_hummus>`.
+
+**With scRNA-seq only — GRNBoost2**
+
+If you only have single-cell RNA-seq data, ReCoN can also infer a GRN using a GRNBoost2-style gradient boosting regression (through `Arboreto <https://arboreto.readthedocs.io/>`_), with no extra dependencies beyond the base ``recon`` install.
+This TF-gene co-expression network can then be filtered before being used in the rest of the ReCoN workflow.
+
+See how to use ReCoN to build GRNs from scRNA-seq only here : :doc:`Building gene regulatory networks with GRNBoost2 <recon_examples/5.recon_grnboost>`.
 
 
 📖 Cite ReCoN
