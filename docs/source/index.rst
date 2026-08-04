@@ -22,10 +22,19 @@
 .. toctree::
    :maxdepth: 1
    :hidden:
-   :glob:
    :caption: Examples
 
-   recon_examples/*
+   Predicting treatment effects <recon_examples/1.recon_molecular_treatment>
+   Exploring molecular coordination <recon_examples/2.recon_multicellular_coordination>
+   Visualizing cell and molecular cascades <recon_examples/3.recon_molecular_cascades>
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+   :caption: Build your GRN
+
+   From multiomics <recon_examples/4.recon_hummus>
+   From scRNA-seq only <recon_examples/5.recon_grnboost>
 
 .. toctree::
    :maxdepth: 1
@@ -69,8 +78,8 @@ ReCoN can be used to address several biological questions, including:
    - :doc:`Exploring intracellular and intercellular regulatory mechanisms <recon_examples/3.recon_molecular_cascades>`
    - **GRN generation**:
 
-     - :doc:`Build GRNs from scRNA-seq + scATAC-seq through HuMMuS methodology <recon_examples/4.recon_hummus>`
-     - :doc:`Build GRNs from scRNA-seq only with GRNBoost2 <recon_examples/5.recon_grnboost>`
+     - :doc:`From multiomics <recon_examples/4.recon_hummus>`
+     - :doc:`From scRNA-seq only <recon_examples/5.recon_grnboost>`
 
 
 📦 Installation
@@ -181,23 +190,23 @@ See how to use ReCoN to explore intracellular regulatory elements here : :doc:`E
 
 ReCoN GRNs can be built from single-cell data in two ways, depending on what data is available.
 
-**With paired scRNA-seq + scATAC-seq — HuMMuS methodology**
+**From multiomics (scRNA-seq + scATAC-seq)**
 
-We previously developped HuMMuS (Trimbour et al., 2024), an other method based on heterogeneous multilayer networks to build gene regulatory networks from single-cell RNA-seq and ATAC-seq data.
+We previously developped `HuMMuS <https://github.com/cantinilab/HuMMuS>`_ (`Trimbour et al., 2024 <https://doi.org/10.1093/bioinformatics/btae143>`_), an other method based on heterogeneous multilayer networks to build gene regulatory networks from single-cell RNA-seq and ATAC-seq data.
 HuMMuS can be used as a standalone method, but it was initially developed as an hybrid package with R and Python.
 
 ReCoN can now also be used to run a Python implementation of HuMMuS to infer GRNs from single-cell data.
 This implementation leverages the functions of CellOracle to build the prior knowledge links between TF, DNA regions and target genes.
 HuMMuS is then applied on a multilayer composed of a TF layer, a DNA region layer and a target gene layer to infer the final GRN.
 
-See how to use ReCoN to build GRNs with HuMMuS here : :doc:`Building gene regulatory networks with HuMMuS <recon_examples/4.recon_hummus>`.
+See how to use ReCoN to build GRNs from multiomics here : :doc:`Building gene regulatory networks from multiomics <recon_examples/4.recon_hummus>`.
 
-**With scRNA-seq only — GRNBoost2**
+**From scRNA-seq only**
 
 If you only have single-cell RNA-seq data, ReCoN can also infer a GRN using a GRNBoost2-style gradient boosting regression (through `Arboreto <https://arboreto.readthedocs.io/>`_), with no extra dependencies beyond the base ``recon`` install.
 This TF-gene co-expression network can then be filtered before being used in the rest of the ReCoN workflow.
 
-See how to use ReCoN to build GRNs from scRNA-seq only here : :doc:`Building gene regulatory networks with GRNBoost2 <recon_examples/5.recon_grnboost>`.
+See how to use ReCoN to build GRNs from scRNA-seq only here : :doc:`Building gene regulatory networks from scRNA-seq only <recon_examples/5.recon_grnboost>`.
 
 
 📖 Cite ReCoN
@@ -210,14 +219,20 @@ If you use ReCoN in your work, please cite:
 
    Trimbour R., Ramirez Flores R. O., Saez Rodriguez J., Cantini L. (2026). Modelling multicellular coordination by bridging cell-cell communication and intracellular regulation through multilayer networks. *bioRxiv*. https://doi.org/10.64898/2026.01.20.700561
 
-If you also use ReCoN to generate GRNs, please cite:
+If you also use ReCoN to generate GRNs, please cite ReCoN along with the method you used:
 
-.. admonition:: Cite HuMMuS
+.. admonition:: Cite GRN generation
    :class: seealso
 
    Trimbour R., Ramirez Flores R. O., Saez Rodriguez J., Cantini L. (2026). Modelling multicellular coordination by bridging cell-cell communication and intracellular regulation through multilayer networks. *bioRxiv*. https://doi.org/10.64898/2026.01.20.700561
-  
+
+   *If you built your GRN with HuMMuS (scRNA-seq + scATAC-seq):*
+
    Trimbour R., Deutschmann I. M., Cantini L. (2024). HuMMuS: Inferring gene regulatory networks through heterogeneous multilayer networks. *Bioinformatics*, 40(3), btae143. https://doi.org/10.1093/bioinformatics/btae143
+
+   *If you built your GRN with GRNBoost2 (scRNA-seq only):*
+
+   Moerman T., Aibar S., Bravo González-Blas C., Simm J., Moreau Y., Aerts J., Aerts S. (2019). GRNBoost2 and Arboreto: efficient and scalable inference of gene regulatory networks. *Bioinformatics*, 35(12), 2159-2161. https://doi.org/10.1093/bioinformatics/bty916
 
 .. note::
    To download the tutorial data, use the following commands:
