@@ -275,10 +275,12 @@ ReCoN outputs **Random Walk with Restart (RWR) scores** representing:
 - **Values 0-1**: Higher = more affected by treatment
 - **Relative ranking**: Compare scores across genes/cells, not absolute magnitudes
 
-The ``alpha`` parameter (default 0.8) controls:
+The ``alpha`` parameter (default 0.8) sets the weight of the **indirect**
+effect (``1 - alpha`` is the weight of the **direct** effect, see
+:doc:`overview`). It controls:
 
-- **High alpha (0.8-0.9)**: Treatment stays local to seeds
-- **Low alpha (0.3-0.5)**: Treatment diffuses widely across network
+- **High alpha (0.8-0.9)**: More weight on the indirect, communication-mediated effect — treatment influence spreads further through cell-cell signaling
+- **Low alpha (0.1-0.3)**: More weight on the direct, receptor-binding effect — treatment influence stays closer to the receptors it binds
 
 What seeds should I use?
 ~~~~~~~~~~~~~~~~~~~~~~~~~
