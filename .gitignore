@@ -13,4 +13,4 @@ __pycache__/
 data/perturbation_tuto/*.h5ad
 data/perturbation_tuto/*.csv
 data/build_grn_tuto/*.h5mu
-
+data/spatial_tuto/*

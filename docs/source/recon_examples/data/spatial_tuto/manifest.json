@@ -1,0 +1,67 @@
+{
+  "seed": 20260825,
+  "reference_cells": 4000,
+  "spatial_spots": 3572,
+  "genes": 4500,
+  "cell_types": {
+    "Cardiomyocyte": 572,
+    "Endothelial": 572,
+    "Fibroblast": 572,
+    "Lymphoid": 571,
+    "Myeloid": 571,
+    "Pericyte": 571,
+    "vSMCs": 571
+  },
+  "reference_samples": 29,
+  "spatial_niches": {
+    "ctniche_1": 1764,
+    "ctniche_2": 24,
+    "ctniche_3": 157,
+    "ctniche_4": 684,
+    "ctniche_5": 471,
+    "ctniche_6": 91,
+    "ctniche_7": 241,
+    "ctniche_8": 35,
+    "ctniche_9": 105
+  },
+  "ccc_genes_present": 758,
+  "grn_edges": 250000,
+  "artifacts": {
+    "avg_expression_niche_1_Visium_18.csv": {
+      "bytes": 1105381,
+      "sha256": "612137cc7092f56f533cd7b79350ba5da30f590a0b79a311614f29662d4517d3"
+    },
+    "avg_expression_niche_5_Visium_18.csv": {
+      "bytes": 1091404,
+      "sha256": "594d5cd44892dc1943170f1befe9a2a522027d95e1907391763808359c0c20c1"
+    },
+    "cell_communication_niche_1_Visium_18.csv": {
+      "bytes": 3799398,
+      "sha256": "fe8af57ba499dceda3fca9bdf3dcc9d25e1830babde777be8e1745b24a4f5284"
+    },
+    "cell_communication_niche_5_Visium_18.csv": {
+      "bytes": 3655716,
+      "sha256": "733ce06a772a8957ca9ce58504bc0d31018686e1a43c5fdccccb29fc6a69bc71"
+    },
+    "compositions.csv": {
+      "bytes": 784,
+      "sha256": "a1aed17efd1f287dae6450a53e37c6bf290fb7d31d85c5bb46b19e51639b7c61"
+    },
+    "heart_grn_top250k.csv": {
+      "bytes": 8112304,
+      "sha256": "aec39feffcbff3669da894bdc6fd283b8a5fc7dc9b751981b1cc34e771173deb"
+    },
+    "proportions.csv": {
+      "bytes": 877,
+      "sha256": "796eafbca285fccfd1b6e6aaf662d21ada1f36db26a610cb6b1df718c0cdadea"
+    },
+    "reference_heart_4k.h5ad": {
+      "bytes": 8130116,
+      "sha256": "4722ce9292765859d68639332d629d181df8adf8999c671f85d2391ba94c2a31"
+    },
+    "visium18_all_spots_4k_genes.h5ad": {
+      "bytes": 29432837,
+      "sha256": "7ef2e7fc2c6a09c460ae26f6f85d09d8e05a5067772d905e029c6ae497f3fbbd"
+    }
+  }
+}

@@ -27,6 +27,7 @@
    Predicting treatment effects <recon_examples/1.recon_molecular_treatment>
    Exploring molecular coordination <recon_examples/2.recon_multicellular_coordination>
    Visualizing cell and molecular cascades <recon_examples/3.recon_molecular_cascades>
+   Exploring a spatial heart niche <recon_examples/6.recon_spatial_niche>
 
 .. toctree::
    :maxdepth: 1
@@ -76,6 +77,7 @@ ReCoN can be used to address several biological questions, including:
    - :doc:`Predicting treatment effects in multicellular systems <recon_examples/1.recon_molecular_treatment>`
    - :doc:`Understanding multicellular program coordination <recon_examples/2.recon_multicellular_coordination>`
    - :doc:`Exploring intracellular and intercellular regulatory mechanisms <recon_examples/3.recon_molecular_cascades>`
+   - :doc:`Exploring a spatial heart niche <recon_examples/6.recon_spatial_niche>`
    - **GRN generation**:
 
      - :doc:`From multiomics <recon_examples/4.recon_hummus>`
@@ -250,4 +252,3 @@ If you also use ReCoN to generate GRNs, please cite ReCoN along with the method 
 
       from recon.data import fetch_tutorial_data
       fetch_tutorial_data('perturbation_tuto/rna.h5ad', data_dir='./data')
-

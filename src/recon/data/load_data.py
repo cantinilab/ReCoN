@@ -9,7 +9,7 @@ receptor_gene_resources = [
 ]
 
 # Updated Zenodo record URL
-TUTORIAL_DATA_URL = "https://zenodo.org/record/18223725/files/"
+TUTORIAL_DATA_URL = "https://zenodo.org/records/22128944/files/"
 
 # Updated tutorial data registry with new Zenodo record
 TUTORIAL_DATA_REGISTRY = {
@@ -19,6 +19,10 @@ TUTORIAL_DATA_REGISTRY = {
     "perturbation_tuto/grn.csv": "sha256:0d4d7857d5ddbf023326b9f0041c5db9c4c2c0a3720dee2c5dad24aee3e00bf9",
     # GRN inference tutorial data
     "build_grn_tuto/pbmc10x.h5mu": "sha256:b12ab3b142315c297d198274792b8c55d74986c14b76148aba6409a76ae1c23c",
+    # Spatial microenvironment tutorial data
+    "spatial_tuto/reference_heart_4k.h5ad": "sha256:4722ce9292765859d68639332d629d181df8adf8999c671f85d2391ba94c2a31",
+    "spatial_tuto/visium18_all_spots_4k_genes.h5ad": "sha256:7ef2e7fc2c6a09c460ae26f6f85d09d8e05a5067772d905e029c6ae497f3fbbd",
+    "spatial_tuto/heart_grn_top250k.csv": "sha256:aec39feffcbff3669da894bdc6fd283b8a5fc7dc9b751981b1cc34e771173deb",
 }
 
 
@@ -60,6 +64,11 @@ def fetch_tutorial_data(filename: str, data_dir: str = "./data", force: bool = F
         
         **GRN inference tutorial** (tutorial 4):
         - "build_grn_tuto/pbmc10x.h5mu": multimodal PBMC data (748 MB)
+
+        **Spatial microenvironment tutorial** (tutorial 6):
+        - "spatial_tuto/reference_heart_4k.h5ad": compact scRNA-seq reference (8 MB)
+        - "spatial_tuto/visium18_all_spots_4k_genes.h5ad": complete Visium slide (29 MB)
+        - "spatial_tuto/heart_grn_top250k.csv": reduced heart GRN (8 MB)
         
     data_dir : str, default="./data"
         Base directory to save the downloaded file.
