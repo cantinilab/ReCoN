@@ -26,6 +26,56 @@ maintainers and agents can update it safely:
 - Keep GitHub release drafts shorter than the changelog. The release page can
   summarize highlights and link back here for detail.
 
+## v0.0.4 - 2026-08-30
+
+ReCoN v0.0.4 adds guided spatial and cascade-plot workflows and improves the
+customization, layout, and diagnostics of biological cascade figures.
+
+### Added
+
+- Added a Visium spatial-niche tutorial covering cell2location deconvolution,
+  spot–cell-type expression reconstruction, niche-specific communication and
+  ReCoN models, and comparison of focal-cell responses across niches.
+- Added a biological cascade-plot tutorial covering intracellular, ligand-to-
+  gene, complete intercellular, and two-run contrast views.
+- Added `start_layer` and `stop_layer` controls for selecting a cascade window.
+- Added `return_edges` so users can inspect the exact paths retained in a plot.
+- Added configurable molecular node colors through `node_type_colors`.
+- Added warnings when a requested cascade transition has no retained edges,
+  including guidance on the relevant `top_*_n` parameter.
+- Added a GRNBoost2 tutorial for constructing a GRN from scRNA-seq data alone.
+
+### Changed
+
+- Improved receiver-only cascade geometry and expanded the intracellular
+  drawing area.
+- Improved gene placement within the receiving-cell nucleus, using compact
+  circular layouts for small programs and centered multi-row layouts for
+  larger programs.
+- Updated the default molecular palette to a ggplot2-inspired color scheme.
+- Reduced duplicate labels and improved connected-path selection across legacy
+  GRN orientations and layer names.
+- Extended tutorial-data upload and download support for the spatial example.
+
+### Fixed
+
+- Fixed TF-to-gene edges that could be selected but omitted from rendering.
+- Fixed duplicate receiving-gene nodes and labels in cascade plots.
+- Fixed contrast construction when result tables contain duplicate indices.
+- Fixed empty sender-layer edge sets causing Sankey construction to fail.
+
+### Tests
+
+- Added regression coverage for layer windows, empty-layer warnings, contrast
+  plots, custom node colors, receiver layouts, legacy GRN formats, and empty
+  sender networks.
+
+### Documentation
+
+- Added spatial-workflow illustrations, dependency and runtime guidance, and
+  links to the corresponding reproducibility showcases.
+- Reorganized and clarified the GRN-generation tutorial navigation.
+
 ## v0.0.3 - 2026-04-29
 
 ReCoN v0.0.3 expands molecular cascade visualization, improves downstream

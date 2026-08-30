@@ -1,6 +1,6 @@
 [project]
 name = "recon"
-version = "0.0.3"
+version = "0.0.4"
 description = "ReCoN: [Reconstruction of multicellular systems from single-cell data to predict perturbation responses and cell programs coordination]"
 authors = [
     { name="Rémi Trimbour", email="remi.trimbour@gmail.com" }
