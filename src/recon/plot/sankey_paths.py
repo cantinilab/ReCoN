@@ -136,13 +136,26 @@ def get_celltype_gene_layer(
     if not layers_list:
         raise KeyError(f"Multiplex '{multiplex_key}' has no layers listed.")
 
-    # Step 1: build a dict mapping each name → its DataFrame
+    # Step 1: build a dict mapping each name to its DataFrame.
     name_to_layer = dict(zip(mux_info["names"], mux_info["layers"]))
-    # Step 2: extract just the DataFrames whose names are in names_of_interest
-    if layer_name in name_to_layer:
-        layer = name_to_layer[layer_name] 
-    else:
-        raise KeyError(f"Multiplex '{multiplex_key}' has no layer {layer_name} listed.")
+
+    # ``gene`` is the semantic intracellular GRN layer expected by the cascade
+    # plotting code. Some older ReCoN objects store the same layer as ``grn``.
+    layer_lookup_order = [layer_name]
+    if layer_name == "gene":
+        layer_lookup_order.extend(["grn", "tf_gene"])
+
+    layer = None
+    for candidate in layer_lookup_order:
+        if candidate in name_to_layer:
+            layer = name_to_layer[candidate]
+            break
+    if layer is None:
+        available = list(name_to_layer)
+        raise KeyError(
+            f"Multiplex '{multiplex_key}' has no layer {layer_name} listed. "
+            f"Available layers: {available}"
+        )
 
     if as_dataframe:
         return layer
@@ -430,16 +443,22 @@ def _normalize_flow(flow: str) -> str:
 
 
 def _top_seed_connected_tfs(results, tf_gene_layer, seeds, cell_type, n):
-    connected_tfs = set(tf_gene_layer.loc[
-        tf_gene_layer["target"].isin(seeds),
-        "source"
-    ])
+    seeds = set(pd.Index(seeds).astype(str))
+    source = tf_gene_layer["source"].astype(str)
+    target = tf_gene_layer["target"].astype(str)
+
+    # Support both TF -> gene and older gene -> TF GRN orientations.
+    connected_tfs = set(source[target.isin(seeds)])
+    connected_tfs.update(target[source.isin(seeds) & _is_tf_node_series(target)])
+
     top_tfs = get_top_tfs(results, cell_type=cell_type, n=len(results))
     top_tfs = top_tfs[top_tfs["node"].isin(connected_tfs)]
     return top_tfs.iloc[:n, :]
 
 
-def _top_tf_connected_receptors(results, receptor_tf_layer, top_tfs, cell_type, n):
+def _top_tf_connected_receptors(
+    results, receptor_tf_layer, top_tfs, cell_type, n, receptor_candidates=None
+):
     tf_nodes = set(top_tfs["node"]) if "node" in top_tfs.columns else set()
     tf_nodes_clean = {tf.replace("_TF::", "::") for tf in tf_nodes}
     connected_receptors = set(receptor_tf_layer.loc[
@@ -447,6 +466,8 @@ def _top_tf_connected_receptors(results, receptor_tf_layer, top_tfs, cell_type, 
         receptor_tf_layer["col1"].isin(tf_nodes_clean),
         "col2"
     ])
+    if receptor_candidates is not None:
+        connected_receptors &= set(receptor_candidates)
     top_receptors = get_top_receptors(results, cell_type=cell_type, n=len(results))
     top_receptors = top_receptors[top_receptors["node"].isin(connected_receptors)]
     return top_receptors.iloc[:n, :]
@@ -1090,11 +1111,21 @@ def extract_gene_tf_pairs(
         print(f"  Sample rows (first 3):")
         print(tf_gene_layer.head(3).to_string(index=False))
 
-    # TFs are in source, regulated seed genes are in target.
-    filtered_df = tf_gene_layer[
-        tf_gene_layer["source"].isin(tfs_list) &
-        tf_gene_layer["target"].isin(genes_list)
+    # Support both TF -> gene and older gene -> TF GRN orientations.
+    source = tf_gene_layer["source"].astype(str)
+    target = tf_gene_layer["target"].astype(str)
+    tf_to_gene = tf_gene_layer[
+        source.isin(tfs_list) & target.isin(genes_list)
     ].copy()
+    gene_to_tf = tf_gene_layer[
+        source.isin(genes_list) & target.isin(tfs_list)
+    ].copy()
+    if len(tf_to_gene):
+        filtered_df = tf_to_gene.rename(columns={"source": "tf", "target": "gene"})
+    elif len(gene_to_tf):
+        filtered_df = gene_to_tf.rename(columns={"source": "gene", "target": "tf"})
+    else:
+        filtered_df = tf_to_gene.rename(columns={"source": "tf", "target": "gene"})
     
     if verbose:
         print(f"\n[extract_gene_tf_pairs] === FILTERING RESULT ===")
@@ -1116,7 +1147,8 @@ def extract_gene_tf_pairs(
             print(f"  Sample filtered pairs (first 3):")
             print(filtered_df[['source', 'target', 'weight']].head(3).to_string(index=False))
     
-    filtered_df = filtered_df.rename(columns={"source": "tf", "target": "gene"})
+    if "tf" not in filtered_df.columns and "source" in filtered_df.columns:
+        filtered_df = filtered_df.rename(columns={"source": "tf", "target": "gene"})
     filtered_df.loc[:, 'tf_clean'] = filtered_df['tf'].str.replace('_TF', '', regex=False)
 
     return filtered_df
@@ -1412,7 +1444,12 @@ def build_partial_networks(
         results, tf_gene_df, seeds_prefixed, cell_type, top_tf_n
     )
     top_receptors = _top_tf_connected_receptors(
-        results, receptor_tf_df, top_tfs, cell_type, top_receptor_n
+        results,
+        receptor_tf_df,
+        top_tfs,
+        cell_type,
+        top_receptor_n,
+        receptor_candidates=set(cc_df["receptor_clean"]),
     )
 
     receptor_ligand_top = extract_receptor_ligand_pairs(
@@ -1440,37 +1477,62 @@ def build_partial_networks(
             gene_tf_pairs
         )
 
-    # Otherwise build full before-cell layers
-    before_cell_types = _ligand_source_celltypes(top_ligands, cell_type)
+    # Otherwise build full before-cell layers. Infer sender cells from the
+    # ligand node suffix; some saved objects have stale/inverted metadata in
+    # ``celltype_source`` / ``celltype_target``.
+    receptor_ligand_top = receptor_ligand_top.copy()
+    if len(receptor_ligand_top):
+        receptor_ligand_top.loc[:, "ligand_celltype"] = (
+            receptor_ligand_top["ligand"].astype(str).apply(_node_celltype)
+        )
+    before_cell_types = [
+        ct for ct in pd.unique(receptor_ligand_top.get("ligand_celltype", pd.Series(dtype=object)))
+        if ct and ct != cell_type
+    ]
     all_before_receptor_tf_pairs = []
     all_before_gene_tf_pairs = []
 
     for before_cell_type in before_cell_types:
-        before_top_receptors = get_top_receptors(results, cell_type=before_cell_type, n=before_top_n)
-        before_top_tfs = get_top_tfs(results, cell_type=before_cell_type, n=before_top_n)
+        before_ligands = receptor_ligand_top.loc[
+            receptor_ligand_top["ligand_celltype"] == before_cell_type, "ligand"
+        ].values
+        if len(before_ligands) == 0:
+            continue
 
         before_tf_gene_df = get_celltype_gene_layer(multicell_obj, before_cell_type, "gene", as_dataframe=True)
         before_receptor_tf_df = get_celltype_grn_receptor_bipartite(multicell_obj, before_cell_type, as_dataframe=True)
 
+        before_top_tfs = _top_seed_connected_tfs(
+            results, before_tf_gene_df, before_ligands, before_cell_type, before_top_n
+        )
         before_gene_tf_pairs = extract_gene_tf_pairs(
             tf_gene_layer=before_tf_gene_df,
             top_tfs=before_top_tfs,
-            seeds=receptor_ligand_top[
-                receptor_ligand_top["celltype_source"] == before_cell_type
-            ]["ligand"].values
+            seeds=before_ligands,
         )
 
+        before_top_receptors = _top_tf_connected_receptors(
+            results, before_receptor_tf_df, before_top_tfs, before_cell_type, before_top_n
+        )
         before_receptor_tf_pairs = extract_receptor_tf_pairs(
             receptor_gene_layer=before_receptor_tf_df,
             top_tfs=before_top_tfs,
-            top_receptors=before_top_receptors
+            top_receptors=before_top_receptors,
         )
 
         all_before_receptor_tf_pairs.append(before_receptor_tf_pairs)
         all_before_gene_tf_pairs.append(before_gene_tf_pairs)
 
-    all_before_receptor_tf_df = pd.concat(all_before_receptor_tf_pairs, ignore_index=True)
-    all_before_gene_tf_df = pd.concat(all_before_gene_tf_pairs, ignore_index=True)
+    all_before_receptor_tf_df = (
+        pd.concat(all_before_receptor_tf_pairs, ignore_index=True)
+        if all_before_receptor_tf_pairs
+        else pd.DataFrame(columns=["receptor", "tf", "weight"])
+    )
+    all_before_gene_tf_df = (
+        pd.concat(all_before_gene_tf_pairs, ignore_index=True)
+        if all_before_gene_tf_pairs
+        else pd.DataFrame(columns=["tf_clean", "gene", "weight"])
+    )
 
     return (
         all_before_receptor_tf_df,

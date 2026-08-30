@@ -41,9 +41,9 @@ def cascade_edges():
             "value": [1.1, 1.2],
         }),
         "tf_gene": pd.DataFrame({
-            "source": ["RTF_TF::Receiver", "GENE_COLLIDE_TF::Receiver", "RTF_TF::Receiver"],
-            "target": ["GENE1::Receiver", "GENE_COLLIDE::Receiver", "SEED1::Receiver"],
-            "value": [1.3, 1.4, 1.5],
+            "source": ["RTF_TF::Receiver", "GENE_COLLIDE_TF::Receiver", "RTF_TF::Receiver", "RTF_TF::Receiver"],
+            "target": ["GENE1::Receiver", "GENE_COLLIDE::Receiver", "SEED1::Receiver", "SEED2::Receiver"],
+            "value": [1.3, 1.4, 1.5, 1.6],
         }),
     }
 
@@ -56,9 +56,9 @@ def cascade_results():
             "LIG1::SenderA", "LIG2::SenderB", "RREC_receptor::Receiver",
             "DUP_receptor::Receiver", "RTF_TF::Receiver",
             "GENE_COLLIDE_TF::Receiver", "GENE1::Receiver",
-            "GENE_COLLIDE::Receiver", "SEED1::Receiver",
+            "GENE_COLLIDE::Receiver", "SEED1::Receiver", "SEED2::Receiver",
         ],
-        "score": [1.0, 2.0, 1.5, 3.0, 2.5, 4.0, 1.0, 5.0, 1.0, 2.0, 0.5, 6.0],
+        "score": [1.0, 2.0, 1.5, 3.0, 2.5, 4.0, 1.0, 5.0, 1.0, 2.0, 0.5, 6.0, 5.5],
     })
 
 
@@ -138,8 +138,145 @@ class TestCascadeFlow:
         assert cascade_core.normalize_flow("DownStream") == "downstream"
 
 
+class TestCascadeLayerWindow:
+    """Test layer-window controls for cascade plots."""
+
+    def test_trim_cascade_edges_keeps_all_keys_and_empties_outside_window(self, cascade_edges):
+        trimmed = cascade_core.trim_cascade_edges(cascade_edges, stop_layer="ligands")
+
+        assert list(trimmed) == cascade_core.CASCADE_EDGE_ORDER
+        assert len(trimmed["upstream_r_tf"]) == len(cascade_edges["upstream_r_tf"])
+        assert len(trimmed["upstream_tf_lig"]) == len(cascade_edges["upstream_tf_lig"])
+        assert trimmed["lig_rec"].empty
+        assert trimmed["rec_tf"].empty
+        assert trimmed["tf_gene"].empty
+        assert trimmed["lig_rec"].columns.tolist() == ["source", "target", "value"]
+
+    def test_trim_cascade_edges_can_start_at_ligands(self, cascade_edges):
+        trimmed = cascade_core.trim_cascade_edges(cascade_edges, start_layer="ligands")
+
+        assert trimmed["upstream_r_tf"].empty
+        assert trimmed["upstream_tf_lig"].empty
+        assert len(trimmed["lig_rec"]) == len(cascade_edges["lig_rec"])
+        assert len(trimmed["rec_tf"]) == len(cascade_edges["rec_tf"])
+        assert len(trimmed["tf_gene"]) == len(cascade_edges["tf_gene"])
+
+    def test_trim_cascade_edges_validates_layer_order(self, cascade_edges):
+        with pytest.raises(ValueError, match="start_layer must"):
+            cascade_core.trim_cascade_edges(cascade_edges, start_layer="genes", stop_layer="ligands")
+        with pytest.raises(ValueError, match="Unknown cascade layer"):
+            cascade_core.trim_cascade_edges(cascade_edges, stop_layer="banana")
+
+    def test_empty_requested_edges_ignore_transitions_outside_window(self, cascade_edges):
+        trimmed = cascade_core.trim_cascade_edges(
+            cascade_edges, start_layer="receptors", stop_layer="genes",
+        )
+        assert cascade_core.empty_requested_cascade_edges(
+            trimmed, start_layer="receptors", stop_layer="genes",
+        ) == []
+
+        trimmed["tf_gene"] = trimmed["tf_gene"].iloc[0:0]
+        assert cascade_core.empty_requested_cascade_edges(
+            trimmed, start_layer="receptors", stop_layer="genes",
+        ) == ["tf_gene"]
+
+    def test_cascade_plot_warns_for_empty_requested_transition(
+            self, monkeypatch, cascade_edges, cascade_results):
+        empty_tf_gene = {key: value.copy() for key, value in cascade_edges.items()}
+        empty_tf_gene["tf_gene"] = empty_tf_gene["tf_gene"].iloc[0:0]
+        monkeypatch.setattr(
+            cascade_plot_module, "build_networks",
+            lambda *args, **kwargs: empty_tf_gene,
+        )
+
+        with pytest.warns(UserWarning, match="receiver TF → gene.*top_tf_n"):
+            fig, ax = cascade_plot_fn(
+                object(), cascade_results,
+                cell_type="Receiver",
+                start_layer="receptors", stop_layer="genes",
+                show_labels=False,
+            )
+        plt.close(fig)
+
+    def test_collect_node_sets_preserves_trimmed_boundary_ligands(self, cascade_edges):
+        trimmed = cascade_core.trim_cascade_edges(cascade_edges, stop_layer="ligands")
+        nodes = cascade_core.collect_node_sets(trimmed, seeds=None, cell_type="Receiver")
+
+        assert nodes["ligands"] == ["LIG1::SenderA", "LIG2::SenderB"]
+        assert nodes["recv_recs"] == []
+
+    def test_cascade_plot_applies_layer_window_and_returns_edges(self, monkeypatch, cascade_edges, cascade_results):
+        monkeypatch.setattr(cascade_plot_module, "build_networks", lambda *args, **kwargs: cascade_edges)
+
+        fig, ax, edges = cascade_plot_fn(
+            object(),
+            cascade_results,
+            cell_type="Receiver",
+            stop_layer="ligands",
+            show_labels=False,
+            return_edges=True,
+        )
+
+        assert not edges["upstream_tf_lig"].empty
+        assert edges["lig_rec"].empty
+        plt.close(fig)
+
+
+    def test_cascade_plot_warns_when_displayed_seeds_are_capped(self, monkeypatch, cascade_edges, cascade_results):
+        monkeypatch.setattr(cascade_plot_module, "build_networks", lambda *args, **kwargs: cascade_edges)
+
+        with pytest.warns(UserWarning, match="Showing only the first 1 seed genes"):
+            fig, ax, edges = cascade_plot_fn(
+                object(),
+                cascade_results,
+                cell_type="Receiver",
+                seeds=["SEED1", "SEED2"],
+                show_seeds=True,
+                max_seed_nodes=1,
+                show_labels=False,
+                return_edges=True,
+            )
+
+        plt.close(fig)
+
+    def test_contrast_cascade_plot_applies_layer_window_and_returns_edges(self, monkeypatch, cascade_edges, cascade_results):
+        monkeypatch.setattr(cascade_plot_module, "build_networks_contrast", lambda *args, **kwargs: cascade_edges)
+        result_b = cascade_results.copy()
+        result_b["score"] = result_b["score"] * 0.5
+
+        fig, ax, edges = contrast_cascade_plot_fn(
+            {"a": object(), "b": object()},
+            cascade_results,
+            result_b,
+            cell_type="Receiver",
+            start_layer="ligands",
+            show_labels=False,
+            return_edges=True,
+        )
+
+        assert edges["upstream_r_tf"].empty
+        assert not edges["lig_rec"].empty
+        plt.close(fig)
+
+
 class TestCascadeCoreHelpers:
     """Test pure helper behavior used by the cascade plots."""
+
+    def test_node_type_color_overrides_are_partial_and_validated(self):
+        palette = cascade_core.resolve_node_type_colors({
+            "ligand": "#ff0000",
+            "tf": (0.1, 0.2, 0.3),
+        })
+
+        assert palette["ligand"] == pytest.approx((1.0, 0.0, 0.0, 1.0))
+        assert palette["tf"] == pytest.approx((0.1, 0.2, 0.3, 1.0))
+        assert palette["receptor"] == cascade_core.TYPE_RGBA["receptor"]
+        with pytest.raises(ValueError, match="Unknown node type color"):
+            cascade_core.resolve_node_type_colors({"protein": "red"})
+        with pytest.raises(ValueError, match="Invalid color"):
+            cascade_core.resolve_node_type_colors({"gene": "not-a-color"})
+        with pytest.raises(TypeError, match="must be a dictionary"):
+            cascade_core.resolve_node_type_colors(["red"])
 
     def test_collect_node_sets_deduplicates_and_tracks_label_collisions(self, cascade_edges):
         nodes = cascade_core.collect_node_sets(cascade_edges, seeds=["SEED1"], cell_type="Receiver")
@@ -149,9 +286,26 @@ class TestCascadeCoreHelpers:
         assert nodes["ligands"] == ["LIG1::SenderA", "LIG2::SenderB"]
         assert nodes["recv_recs"] == ["RREC_receptor::Receiver", "DUP_receptor::Receiver"]
         assert nodes["recv_tfs"] == ["RTF_TF::Receiver", "GENE_COLLIDE_TF::Receiver"]
-        assert nodes["recv_genes"] == ["GENE1::Receiver", "GENE_COLLIDE::Receiver"]
+        assert nodes["recv_genes"] == ["GENE1::Receiver", "GENE_COLLIDE::Receiver", "SEED2::Receiver"]
         assert nodes["seed_nodes"] == ["SEED1::Receiver"]
         assert nodes["name_collisions"] == {"GENE_COLLIDE"}
+
+    def test_collect_node_sets_does_not_reintroduce_all_seed_targets_as_genes(
+            self, cascade_edges):
+        all_seed_edges = {key: value.copy() for key, value in cascade_edges.items()}
+        all_seed_edges["tf_gene"] = pd.DataFrame({
+            "source": ["RTF_TF::Receiver", "RTF_TF::Receiver"],
+            "target": ["SEED1::Receiver", "SEED2::Receiver"],
+            "value": [1.0, 0.8],
+        })
+
+        nodes = cascade_core.collect_node_sets(
+            all_seed_edges, seeds=["SEED1", "SEED2"], cell_type="Receiver",
+        )
+
+        assert nodes["recv_genes"] == []
+        assert nodes["seed_nodes"] == ["SEED1::Receiver", "SEED2::Receiver"]
+        assert not (set(nodes["recv_genes"]) & set(nodes["seed_nodes"]))
 
     def test_compute_layout_positions_every_drawn_node_and_orders_receiver_receptors(self, cascade_edges):
         nodes = cascade_core.collect_node_sets(cascade_edges, seeds=["SEED1"], cell_type="Receiver")
@@ -170,6 +324,17 @@ class TestCascadeCoreHelpers:
         )
         assert set(expected_nodes) <= set(positions)
         assert nodes["recv_recs"] == ["RREC_receptor::Receiver", "DUP_receptor::Receiver"]
+
+        nucleus_nodes = nodes["recv_genes"] + nodes["seed_nodes"]
+        nucleus_a = 0.40 * geo["RECV_R"]
+        nucleus_b = 0.40 * geo["RECV_R"] * geo["RECV_RY_RATIO"]
+        for node in nucleus_nodes:
+            x, y = positions[node]
+            normalized_radius = np.sqrt(
+                ((x - geo["NUC_CX"]) / nucleus_a) ** 2
+                + ((y - geo["recv_cy"]) / nucleus_b) ** 2
+            )
+            assert normalized_radius <= cascade_core.NUCLEUS_LAYOUT_FRACTION
 
     def test_compute_node_radii_scales_by_group_and_can_be_disabled(self):
         nodes = ["low", "high", "missing"]
@@ -233,9 +398,22 @@ class TestCascadeCoreHelpers:
         assert cascade_core.vertical_positions(1, 2, 0, 3) == []
         assert cascade_core.vertical_positions(1, 2, 1, 3) == [(1, 2)]
         assert cascade_core.vertical_positions(0, 0, 3, 1)[0] == pytest.approx((0, -1))
+        assert cascade_core.ellipse_ring_positions(1, 2, 3, 4, 0) == []
+        assert cascade_core.ellipse_ring_positions(1, 2, 3, 4, 1) == [(1, 2)]
+        ring = cascade_core.ellipse_ring_positions(0, 0, 2, 1, 5)
+        assert len(ring) == 5
+        assert all(
+            (x / 2) ** 2 + y ** 2 == pytest.approx(1.0)
+            for x, y in ring
+        )
         assert cascade_core.grid_positions_in_ellipse(0, 0, 1, 1, 0) == []
         assert len(cascade_core.grid_positions_in_ellipse(0, 0, 2, 1, 5)) == 5
         assert len(cascade_core.grid_positions_in_ellipse(0, 0, 2, 0, 3)) == 3
+        seven_nodes = cascade_core.grid_positions_in_ellipse(2, 0, 1, 1, 7)
+        assert seven_nodes[-1][0] == pytest.approx(2.0)
+
+    def test_every_cascade_transition_has_a_drawing_configuration(self):
+        assert list(cascade_core.CASCADE_EDGE_CURVATURE) == cascade_core.CASCADE_EDGE_ORDER
 
     def test_empty_collect_geometry_and_setup_figure_defaults(self):
         nodes = cascade_core.collect_node_sets(_empty_edges(), seeds=None, cell_type="Receiver")
@@ -246,9 +424,17 @@ class TestCascadeCoreHelpers:
         assert geo["sender_ct_order"] == []
         assert geo["sender_cy_by_ct"] == {}
         assert geo["n_senders"] == 1
+        assert geo["receiver_only"] is True
+        assert geo["recv_cx"] == pytest.approx(0.0)
+        assert geo["recv_cy"] == pytest.approx(0.0)
 
         fig, ax, y_max = cascade_core.setup_figure(geo)
-        assert y_max > 0
+        assert y_max == pytest.approx(
+            geo["RECV_R"] * geo["RECV_RY_RATIO"] + 1.5
+        )
+        x_min, x_max = ax.get_xlim()
+        assert (x_min + x_max) / 2 == pytest.approx(geo["recv_cx"])
+        assert fig.get_size_inches()[0] < 10
         assert ax.axison is False
         plt.close(fig)
 
@@ -422,7 +608,11 @@ class TestCascadeCoreHelpers:
         assert set(all_nodes) <= set(positions)
         assert any(text.get_text() == "Seeds" for text in ax.texts)
         assert {"Sender cells", "Ligands", "Receiver"} <= {text.get_text() for text in ax.texts}
-        assert len([patch for patch in ax.patches if isinstance(patch, FancyArrowPatch)]) == 16
+        expected_arrows = 2 * sum(
+            (edges["source"].isin(positions) & edges["target"].isin(positions)).sum()
+            for edges in cascade_edges.values()
+        )
+        assert len([patch for patch in ax.patches if isinstance(patch, FancyArrowPatch)]) == expected_arrows
         plt.close(fig)
 
     def test_build_networks_formats_maps_and_filters_sankey_layers(self, monkeypatch):
@@ -519,7 +709,10 @@ class TestCascadeCoreHelpers:
                     },
                 }
 
-        results = pd.DataFrame({"node": ["LIG-CellA", "DIRECT::CellB"], "score": [99.0, 99.0]})
+        results = pd.DataFrame(
+            {"node": ["LIG-CellA", "DIRECT::CellB"], "score": [99.0, 99.0]},
+            index=[0, 0],
+        )
         out = cascade_core.build_networks_contrast(
             {"A": MockMulti("DUP"), "B": MockMulti("UNIQ")},
             results,
@@ -646,7 +839,7 @@ class TestCascadePublicPlots:
             return {}
 
         results_b = cascade_results.copy()
-        results_b["score"] = [0.5, 3.0, 1.5, 1.0, 5.0, 2.0, 2.0, 7.0, 0.0, 2.5, 1.5, 1.0]
+        results_b["score"] = [0.5, 3.0, 1.5, 1.0, 5.0, 2.0, 2.0, 7.0, 0.0, 2.5, 1.5, 1.0, 1.2]
 
         monkeypatch.setattr(cascade_plot_module, "build_networks_contrast", lambda *args, **kwargs: cascade_edges)
         monkeypatch.setattr(cascade_plot_module, "draw_cells_and_edges", fake_draw)

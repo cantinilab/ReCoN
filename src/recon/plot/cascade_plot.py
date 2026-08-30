@@ -7,6 +7,8 @@ Two entry points
   contrast_cascade_plot   — two-run contrast, diverging delta coloring
 """
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -15,6 +17,8 @@ from .cascade_core import (
     # Network & layout
     build_networks,
     build_networks_contrast,
+    trim_cascade_edges,
+    empty_requested_cascade_edges,
     collect_node_sets,
     compute_global_geometry,
     setup_figure,
@@ -25,12 +29,89 @@ from .cascade_core import (
     celltype_of,
     compute_node_radii,
     # Color helpers
-    TYPE_RGBA,
+    resolve_node_type_colors,
     score_to_rgba,
     score_to_grey,
     # Legend
     draw_type_legend,
 )
+
+
+_EMPTY_LAYER_HELP = {
+    "upstream_r_tf": "sender receptor → TF (increase before_top_n)",
+    "upstream_tf_lig": "sender TF → ligand (increase before_top_n or top_ligand_n)",
+    "lig_rec": "ligand → receiver receptor (increase top_ligand_n or top_receptor_n)",
+    "rec_tf": "receiver receptor → TF (increase top_receptor_n or top_tf_n)",
+    "tf_gene": "receiver TF → gene (increase top_tf_n)",
+}
+
+
+def _warn_empty_requested_layers(edges, *, start_layer=None, stop_layer=None):
+    empty = empty_requested_cascade_edges(
+        edges, start_layer=start_layer, stop_layer=stop_layer,
+    )
+    if not empty:
+        return
+    transitions = "; ".join(_EMPTY_LAYER_HELP[key] for key in empty)
+    warnings.warn(
+        "No connections were retained for the requested cascade transition(s): "
+        f"{transitions}. If increasing the suggested selection limit does not "
+        "help, check gene identifiers and confirm that the required edges exist "
+        "in the GRN, receptor prior, or communication network.",
+        UserWarning,
+        stacklevel=3,
+    )
+
+
+def _limit_displayed_seed_gene_edges(edges, seeds, cell_type, max_seed_nodes):
+    """Limit displayed seed-gene targets without changing upstream selection."""
+    if seeds is None or max_seed_nodes is None or "tf_gene" not in edges:
+        return edges
+    seed_values = list(seeds.keys()) if hasattr(seeds, "keys") else list(seeds)
+    seed_nodes = []
+    for seed in seed_values:
+        seed = str(seed)
+        seed_nodes.append(seed if "::" in seed else f"{seed}::{cell_type}")
+    present_seed_nodes = [
+        seed for seed in seed_nodes
+        if seed in set(edges["tf_gene"].get("target", pd.Series(dtype=object)).astype(str))
+    ]
+    if len(present_seed_nodes) <= max_seed_nodes:
+        return edges
+
+    warnings.warn(
+        f"Showing only the first {max_seed_nodes} seed genes out of {len(present_seed_nodes)} "
+        "in the cascade plot. All seeds were still used for network selection; "
+        "increase max_seed_nodes to show more.",
+        UserWarning,
+    )
+    keep_seed_nodes = set(present_seed_nodes[:max_seed_nodes])
+    limited = {key: value.copy() for key, value in edges.items()}
+    tf_gene = limited["tf_gene"]
+    seed_target_mask = tf_gene["target"].astype(str).isin(set(seed_nodes))
+    limited["tf_gene"] = tf_gene[~seed_target_mask | tf_gene["target"].astype(str).isin(keep_seed_nodes)].copy()
+    return limited
+
+def _score_to_rgba_with_floor(score, vmax, base_rgb, alpha=0.85, min_fraction=0.22):
+    if not np.isfinite(score) or vmax <= 0:
+        return (1.0, 1.0, 1.0, alpha)
+    t = min(max(score / vmax, 0.0), 1.0)
+    if t > 0:
+        t = min_fraction + t * (1.0 - min_fraction)
+    r = 1.0 + t * (base_rgb[0] - 1.0)
+    g = 1.0 + t * (base_rgb[1] - 1.0)
+    b = 1.0 + t * (base_rgb[2] - 1.0)
+    return (r, g, b, alpha)
+
+
+def _score_to_grey_with_floor(score, vmax, alpha=0.65, min_fraction=0.25):
+    if not np.isfinite(score) or vmax <= 0:
+        return (1.0, 1.0, 1.0, alpha)
+    t = min(max(score / vmax, 0.0), 1.0)
+    if t > 0:
+        t = min_fraction + t * (1.0 - min_fraction)
+    grey = 1.0 - t * 0.55
+    return (grey, grey, grey, alpha)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -50,7 +131,9 @@ def cascade_plot(
     before_top_n: int = 5,
     per_celltype: bool = True,
     show_seeds: bool = False,
+    max_seed_nodes: int = 20,
     celltype_colors: dict = None,
+    node_type_colors: dict = None,
     celltype_display_names: dict = None,
     show_labels: bool = True,
     label_fontsize: int = 14,
@@ -65,6 +148,9 @@ def cascade_plot(
     verbose: bool = False,
     title: str = None,
     flow: str = "upstream",
+    start_layer: str = None,
+    stop_layer: str = None,
+    return_edges: bool = False,
 ):
     """Biological cell cascade diagram for a single run.
 
@@ -82,10 +168,19 @@ def cascade_plot(
     show_seeds : bool
         If True, seed genes are shown as individual nodes in the nucleus.
     flow : {'upstream', 'downstream'}, default='upstream'
-        If 'upstream', draw ligand → receptor → TF → gene arrows.
-        If 'downstream', draw gene → TF → receptor → ligand arrows.
+        Controls how the cascade network is selected from ReCoN scores.
+    start_layer, stop_layer : str, optional
+        Inclusive biological layer window. Examples: ``stop_layer="ligands"``
+        keeps sender regulation up to ligands; ``start_layer="ligands"``
+        keeps ligand-to-receiver regulation.
+    return_edges : bool, default=False
+        If True, return ``(fig, ax, edges)`` for testing/debugging.
+    node_type_colors : dict, optional
+        Partial overrides for ``receptor``, ``tf``, ``ligand``, ``gene``,
+        and ``seed``. Values may use any Matplotlib color format.
     """
     flow = normalize_flow(flow)
+    node_type_colors = resolve_node_type_colors(node_type_colors)
 
     # ── 1. Build & filter networks ──────────────────────────────────────
     edges = build_networks(
@@ -96,11 +191,17 @@ def cascade_plot(
         per_celltype=per_celltype, verbose=verbose,
         flow=flow,
     )
+    edges = trim_cascade_edges(edges, start_layer=start_layer, stop_layer=stop_layer)
+    _warn_empty_requested_layers(
+        edges, start_layer=start_layer, stop_layer=stop_layer,
+    )
+    edges = _limit_displayed_seed_gene_edges(edges, seeds, cell_type, max_seed_nodes)
 
     # ── 2. Collect node sets ────────────────────────────────────────────
+    seed_display = seeds if show_seeds else None
     nodes = collect_node_sets(
         edges,
-        seeds=seeds if show_seeds else None,
+        seeds=seed_display,
         cell_type=cell_type,
     )
 
@@ -150,10 +251,14 @@ def cascade_plot(
 
     # ── 6. Per-group score vmax for color gradient ──────────────────────
     _group_map = {}
-    for n in nodes["sender_recs"] + nodes["recv_recs"]:
-        _group_map[n] = "receptor"
-    for n in nodes["sender_tfs"] + nodes["recv_tfs"]:
-        _group_map[n] = "tf"
+    for n in nodes["sender_recs"]:
+        _group_map[n] = "sender_receptor"
+    for n in nodes["recv_recs"]:
+        _group_map[n] = "receiver_receptor"
+    for n in nodes["sender_tfs"]:
+        _group_map[n] = "sender_tf"
+    for n in nodes["recv_tfs"]:
+        _group_map[n] = "receiver_tf"
     for n in nodes["ligands"]:
         _group_map[n] = "ligand"
     for n in nodes["recv_genes"]:
@@ -162,7 +267,7 @@ def cascade_plot(
         _group_map[n] = "seed"
 
     _group_vmax = {}
-    for group_name in ("receptor", "tf", "ligand", "gene", "seed"):
+    for group_name in ("sender_receptor", "receiver_receptor", "sender_tf", "receiver_tf", "ligand", "gene", "seed"):
         group_nodes = [n for n, g in _group_map.items() if g == group_name]
         group_scores = [score_dict.get(n, 0.0) for n in group_nodes]
         _group_vmax[group_name] = max(group_scores) if group_scores else 1.0
@@ -170,20 +275,27 @@ def cascade_plot(
             _group_vmax[group_name] = 1.0
 
     # ── 7. Color functions ──────────────────────────────────────────────
-    _ROLE_BASE_RGB = {k: v[:3] for k, v in TYPE_RGBA.items()}
+    _ROLE_BASE_RGB = {k: v[:3] for k, v in node_type_colors.items()}
+    _DISPLAY_ROLE = {
+        "sender_receptor": "receptor",
+        "receiver_receptor": "receptor",
+        "sender_tf": "tf",
+        "receiver_tf": "tf",
+    }
 
     def _node_fill(node_name, role):
-        base_rgb = _ROLE_BASE_RGB.get(role, (0.5, 0.5, 0.5))
+        score_group = _group_map.get(node_name, role)
+        display_role = _DISPLAY_ROLE.get(score_group, role)
+        base_rgb = _ROLE_BASE_RGB.get(display_role, (0.5, 0.5, 0.5))
         s = score_dict.get(node_name, 0.0)
-        vmax = _group_vmax.get(role, 1.0)
-        return score_to_rgba(s, vmax, base_rgb, alpha=node_alpha)
+        vmax = _group_vmax.get(score_group, 1.0)
+        return _score_to_rgba_with_floor(s, vmax, base_rgb, alpha=node_alpha)
 
     def _edge_color(node_ref, layer_key):
         s = score_dict.get(node_ref, 0.0)
-        # Use the source node's group vmax for edge grey gradient
-        role = _group_map.get(node_ref, "gene")
-        vmax = _group_vmax.get(role, 1.0)
-        return score_to_grey(s, vmax, alpha=edge_alpha)
+        score_group = _group_map.get(node_ref, "gene")
+        vmax = _group_vmax.get(score_group, 1.0)
+        return _score_to_grey_with_floor(s, vmax, alpha=edge_alpha)
 
     # ── 8. Figure setup & draw ──────────────────────────────────────────
     fig, ax, y_max = setup_figure(geo, figsize)
@@ -203,11 +315,15 @@ def cascade_plot(
         seed_label=seed_label,
         seed_label_fontsize=seed_label_fontsize,
         flow=flow,
+        node_type_colors=node_type_colors,
     )
 
     # ── 9. Labels & legend ──────────────────────────────────────────────
     add_section_labels(ax, geo, y_max, label_fontsize)
-    draw_type_legend(ax, label_fontsize, show_seeds=show_seeds)
+    draw_type_legend(
+        ax, label_fontsize, show_seeds=show_seeds,
+        node_type_colors=node_type_colors,
+    )
 
     # ── 10. Title ───────────────────────────────────────────────────────
     fig_title = title or f"Cell signaling cascade ({flow}) — {cell_type or '?'}"
@@ -218,6 +334,8 @@ def cascade_plot(
         plt.savefig(save_path, bbox_inches="tight", dpi=150)
         print(f"Saved: {save_path}")
     plt.show()
+    if return_edges:
+        return fig, ax, edges
     return fig, ax
 
 
@@ -239,11 +357,13 @@ def contrast_cascade_plot(
     before_top_n: int = 5,
     per_celltype: bool = True,
     show_seeds: bool = False,
+    max_seed_nodes: int = 20,
     delta_vmax: float = 2.0,
     delta_min_quantile: float = 0.3,
     delta_min_color_fraction: float = 0.0,
     contrast_scheme: str = "temperature",
     celltype_colors: dict = None,
+    node_type_colors: dict = None,
     celltype_display_names: dict = None,
     normalize_receiver_scores: bool = True,
     show_labels: bool = True,
@@ -259,6 +379,9 @@ def contrast_cascade_plot(
     verbose: bool = False,
     title: str = None,
     flow: str = "upstream",
+    start_layer: str = None,
+    stop_layer: str = None,
+    return_edges: bool = False,
 ):
     """Biological cell cascade diagram comparing two runs.
 
@@ -278,6 +401,9 @@ def contrast_cascade_plot(
         'sex': blue (A-enriched) ↔ white ↔ orange (B-enriched).
     normalize_receiver_scores : bool
         Z-score color values within each receiver layer.
+    node_type_colors : dict, optional
+        Partial overrides for the molecular-type halo and legend colors.
+        Contrast fill colors continue to represent the score difference.
     flow : {'upstream', 'downstream'}, default='upstream'
         If 'upstream', draw ligand → receptor → TF → gene arrows.
         If 'downstream', draw gene → TF → receptor → ligand arrows.
@@ -290,6 +416,7 @@ def contrast_cascade_plot(
         draw_contrast_legend,
     )
     flow = normalize_flow(flow)
+    node_type_colors = resolve_node_type_colors(node_type_colors)
 
     # ── 1. Compute delta metrics from two score vectors ─────────────────
     scores_a = results_a.set_index("node")["score"]
@@ -313,6 +440,11 @@ def contrast_cascade_plot(
         top_tf_n=top_tf_n, before_top_n=before_top_n,
         per_celltype=per_celltype, verbose=verbose, flow=flow,
     )
+    edges = trim_cascade_edges(edges, start_layer=start_layer, stop_layer=stop_layer)
+    _warn_empty_requested_layers(
+        edges, start_layer=start_layer, stop_layer=stop_layer,
+    )
+    edges = _limit_displayed_seed_gene_edges(edges, seeds, cell_type, max_seed_nodes)
 
     # ── 3. Collect node sets ────────────────────────────────────────────
     nodes = collect_node_sets(
@@ -412,13 +544,15 @@ def contrast_cascade_plot(
         score_filter_dict=signed_delta,
         lfc_thresholds=delta_thresholds,
         flow=flow,
+        node_type_colors=node_type_colors,
     )
 
     # ── 10. Labels & legend ─────────────────────────────────────────────
     add_section_labels(ax, geo, y_max, label_fontsize)
     draw_contrast_legend(ax, contrast_scheme, delta_vmax,
                          normalize_receiver_scores, label_fontsize,
-                         show_seeds=show_seeds)
+                         show_seeds=show_seeds,
+                         node_type_colors=node_type_colors)
 
     # ── 11. Title ───────────────────────────────────────────────────────
     if title is not None:
@@ -441,4 +575,6 @@ def contrast_cascade_plot(
         plt.savefig(save_path, bbox_inches="tight", dpi=150)
         print(f"Saved: {save_path}")
     plt.show()
+    if return_edges:
+        return fig, ax, edges
     return fig, ax

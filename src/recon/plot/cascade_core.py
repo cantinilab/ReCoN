@@ -11,6 +11,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.lines as mlines
+from matplotlib.colors import to_rgba
 from matplotlib.patches import Circle, Arc, FancyBboxPatch, FancyArrowPatch
 
 
@@ -20,6 +21,8 @@ from matplotlib.patches import Circle, Arc, FancyBboxPatch, FancyArrowPatch
 
 EDGE_LW_MIN = 2.4
 EDGE_LW_MAX = 11.0
+NUCLEUS_LAYOUT_FRACTION = 0.70
+NUCLEUS_RING_MAX_NODES = 8
 
 SENDER_PALETTE = [
     (0.85, 0.92, 0.78, 0.30),
@@ -29,11 +32,11 @@ SENDER_PALETTE = [
 ]
 
 TYPE_RGBA = {
-    "receptor": (0.20, 0.65, 0.32, 0.90),
-    "tf":       (0.75, 0.40, 0.15, 0.90),
-    "ligand":   (0.15, 0.50, 0.72, 0.90),
-    "gene":     (0.60, 0.20, 0.55, 0.90),
-    "seed":     (0.45, 0.15, 0.45, 0.90),
+    "receptor": (0.486, 0.682, 0.000, 0.90),  # #7CAE00
+    "tf":       (0.973, 0.463, 0.427, 0.90),  # #F8766D
+    "ligand":   (0.000, 0.749, 0.769, 0.90),  # #00BFC4
+    "gene":     (0.780, 0.486, 1.000, 0.90),  # #C77CFF
+    "seed":     (0.612, 0.310, 0.722, 0.90),  # #9C4FB8
 }
 
 EDGE_RGBA = {
@@ -52,6 +55,65 @@ DEFAULT_RECV_COLORS = dict(
     nuc_edge=(0.16, 0.30, 0.72, 0.92),
     label=(0.15, 0.35, 0.65),
 )
+
+
+CASCADE_EDGE_ORDER = [
+    "upstream_r_tf",
+    "upstream_tf_lig",
+    "lig_rec",
+    "rec_tf",
+    "tf_gene",
+]
+
+CASCADE_EDGE_CURVATURE = {
+    "upstream_r_tf": 0.30,
+    "upstream_tf_lig": 0.20,
+    "lig_rec": 0.10,
+    "rec_tf": 0.25,
+    "tf_gene": 0.16,
+}
+
+CASCADE_LAYER_ORDER = [
+    "sender_receptors",
+    "sender_tfs",
+    "ligands",
+    "receptors",
+    "tfs",
+    "genes",
+]
+
+CASCADE_EDGE_SPANS = {
+    "upstream_r_tf": ("sender_receptors", "sender_tfs"),
+    "upstream_tf_lig": ("sender_tfs", "ligands"),
+    "lig_rec": ("ligands", "receptors"),
+    "rec_tf": ("receptors", "tfs"),
+    "tf_gene": ("tfs", "genes"),
+}
+
+CASCADE_LAYER_ALIASES = {
+    "sender_receptor": "sender_receptors",
+    "sender_receptors": "sender_receptors",
+    "upstream_receptor": "sender_receptors",
+    "upstream_receptors": "sender_receptors",
+    "sender_tf": "sender_tfs",
+    "sender_tfs": "sender_tfs",
+    "upstream_tf": "sender_tfs",
+    "upstream_tfs": "sender_tfs",
+    "ligand": "ligands",
+    "ligands": "ligands",
+    "receptor": "receptors",
+    "receptors": "receptors",
+    "receiver_receptor": "receptors",
+    "receiver_receptors": "receptors",
+    "tf": "tfs",
+    "tfs": "tfs",
+    "receiver_tf": "tfs",
+    "receiver_tfs": "tfs",
+    "gene": "genes",
+    "genes": "genes",
+    "seed": "genes",
+    "seeds": "genes",
+}
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -83,6 +145,16 @@ def vertical_positions(cx, cy, n, half_span):
     return [(cx, y) for y in ys]
 
 
+def ellipse_ring_positions(cx, cy, a, b, n):
+    """Evenly distribute a small node set around an elliptical ring."""
+    if n == 0:
+        return []
+    if n == 1:
+        return [(cx, cy)]
+    angles = np.linspace(np.pi / 2, np.pi / 2 + 2 * np.pi, n, endpoint=False)
+    return [(cx + a * np.cos(angle), cy + b * np.sin(angle)) for angle in angles]
+
+
 def grid_positions_in_ellipse(cx, cy, a, b, n):
     if n == 0:
         return []
@@ -95,7 +167,8 @@ def grid_positions_in_ellipse(cx, cy, a, b, n):
         row_n = min(n_cols, n - len(pts))
         if row_n <= 0:
             break
-        for c in np.linspace(-hw, hw, max(row_n, 1)):
+        columns = [0.0] if row_n == 1 else np.linspace(-hw, hw, row_n)
+        for c in columns:
             pts.append((cx + c, cy + r))
             if len(pts) >= n:
                 break
@@ -128,6 +201,28 @@ def parse_rgba(rgba):
         parts = [float(x) for x in inner.split(",")]
         return (parts[0] / 255.0, parts[1] / 255.0, parts[2] / 255.0, parts[3])
     return tuple(float(v) for v in rgba[:4])
+
+
+def resolve_node_type_colors(overrides=None):
+    """Return the default molecular-role palette with validated overrides."""
+    colors = TYPE_RGBA.copy()
+    if overrides is None:
+        return colors
+    if not isinstance(overrides, dict):
+        raise TypeError("node_type_colors must be a dictionary or None.")
+    unknown = set(overrides) - set(TYPE_RGBA)
+    if unknown:
+        allowed = ", ".join(TYPE_RGBA)
+        invalid = ", ".join(sorted(unknown))
+        raise ValueError(
+            f"Unknown node type color key(s): {invalid}. Allowed keys: {allowed}."
+        )
+    for role, color in overrides.items():
+        try:
+            colors[role] = to_rgba(color)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid color for node type {role!r}: {color!r}.") from exc
+    return colors
 
 
 def score_to_rgba(score, vmax, base_rgb, alpha=0.85):
@@ -199,6 +294,63 @@ def normalize_flow(flow: str) -> str:
     if flow not in {"upstream", "downstream"}:
         raise ValueError("flow must be either 'upstream' or 'downstream'.")
     return flow
+
+
+def normalize_cascade_layer(layer):
+    """Normalize user-facing cascade layer names."""
+    if layer is None:
+        return None
+    key = str(layer).strip().lower().replace(" ", "_").replace("-", "_")
+    if key not in CASCADE_LAYER_ALIASES:
+        allowed = ", ".join(CASCADE_LAYER_ORDER)
+        raise ValueError(f"Unknown cascade layer {layer!r}. Allowed layers: {allowed}")
+    return CASCADE_LAYER_ALIASES[key]
+
+
+def trim_cascade_edges(edges, *, start_layer=None, stop_layer=None):
+    """Keep only cascade edge tables inside the selected layer window.
+
+    ``start_layer`` and ``stop_layer`` are inclusive biological layer names,
+    for example ``"genes"``, ``"ligands"``, or ``"sender_tfs"``. The
+    returned dict always has all five canonical edge keys; skipped layers are
+    represented by empty ``source,target,value`` dataframes so downstream
+    drawing code can stay simple.
+    """
+    start = normalize_cascade_layer(start_layer) or CASCADE_LAYER_ORDER[0]
+    stop = normalize_cascade_layer(stop_layer) or CASCADE_LAYER_ORDER[-1]
+    start_i = CASCADE_LAYER_ORDER.index(start)
+    stop_i = CASCADE_LAYER_ORDER.index(stop)
+    if start_i >= stop_i:
+        raise ValueError("start_layer must be upstream/left of stop_layer.")
+
+    empty = pd.DataFrame(columns=["source", "target", "value"])
+    trimmed = {}
+    for key in CASCADE_EDGE_ORDER:
+        edge_start, edge_stop = CASCADE_EDGE_SPANS[key]
+        keep = (
+            CASCADE_LAYER_ORDER.index(edge_start) >= start_i
+            and CASCADE_LAYER_ORDER.index(edge_stop) <= stop_i
+        )
+        trimmed[key] = edges[key].copy() if keep else empty.copy()
+    return trimmed
+
+
+def empty_requested_cascade_edges(edges, *, start_layer=None, stop_layer=None):
+    """Return empty edge transitions that fall inside the requested window."""
+    start = normalize_cascade_layer(start_layer) or CASCADE_LAYER_ORDER[0]
+    stop = normalize_cascade_layer(stop_layer) or CASCADE_LAYER_ORDER[-1]
+    start_i = CASCADE_LAYER_ORDER.index(start)
+    stop_i = CASCADE_LAYER_ORDER.index(stop)
+    empty = []
+    for key in CASCADE_EDGE_ORDER:
+        edge_start, edge_stop = CASCADE_EDGE_SPANS[key]
+        requested = (
+            CASCADE_LAYER_ORDER.index(edge_start) >= start_i
+            and CASCADE_LAYER_ORDER.index(edge_stop) <= stop_i
+        )
+        if requested and edges[key].empty:
+            empty.append(key)
+    return empty
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -300,11 +452,12 @@ def build_networks_contrast(multicell_objs, results, score_dict, *,
     results_fake["score"] = results_fake["node"].map(
         lambda n: abs(score_dict.get(n, 0.0))
     )
-    for idx in results_fake[results_fake["score"] == 0.0].index:
-        node = results_fake.loc[idx, "node"]
-        node_replaced = "::".join(node.rsplit("-", 1))
-        if node_replaced in score_dict:
-            results_fake.at[idx, "score"] = abs(score_dict[node_replaced])
+    missing = results_fake["score"].eq(0.0)
+    compatibility_nodes = results_fake.loc[missing, "node"].astype(str).map(
+        lambda node: "::".join(node.rsplit("-", 1))
+    )
+    compatibility_scores = compatibility_nodes.map(score_dict).abs()
+    results_fake.loc[missing, "score"] = compatibility_scores.fillna(0.0).to_numpy()
 
     multicell_unique = multicell_objs[list(multicell_objs.keys())[0]]
     multicell_unique.multiplexes["cell_communication"]["layers"][0] = pd.concat(
@@ -364,6 +517,43 @@ def collect_node_sets(edges, seeds=None, cell_type=None):
     # Deduplicate: seeds vs recv_genes (seeds win)
     seed_set = set(seed_nodes)
     recv_genes = [n for n in recv_genes if n not in seed_set]
+
+    # Preserve boundary nodes when edge layers are intentionally trimmed.
+    if not sender_recs and len(br_bt):
+        sender_recs = list(pd.unique(br_bt["source"]))
+    if not sender_tfs:
+        sender_tf_vals = []
+        if len(br_bt):
+            sender_tf_vals.extend(pd.unique(br_bt["target"]))
+        if len(bt_l):
+            sender_tf_vals.extend(pd.unique(bt_l["source"]))
+        sender_tfs = list(dict.fromkeys(sender_tf_vals))
+    if not ligands and len(bt_l):
+        ligands = list(pd.unique(bt_l["target"]))
+    if not recv_recs:
+        recv_rec_vals = []
+        if len(l_r):
+            recv_rec_vals.extend(pd.unique(l_r["target"]))
+        if len(r_t):
+            recv_rec_vals.extend(pd.unique(r_t["source"]))
+        recv_recs = list(dict.fromkeys(recv_rec_vals))
+    if not recv_tfs:
+        recv_tf_vals = []
+        if len(r_t):
+            recv_tf_vals.extend(pd.unique(r_t["target"]))
+        if len(t_g):
+            recv_tf_vals.extend(pd.unique(t_g["source"]))
+        recv_tfs = list(dict.fromkeys(recv_tf_vals))
+    if not recv_genes and len(t_g):
+        recv_genes = list(pd.unique(t_g["target"]))
+
+    # Boundary preservation above may repopulate genes after the first role
+    # deduplication (notably when every target is also a displayed seed).
+    # Reapply it so a nucleus node is drawn exactly once, with seeds winning.
+    recv_genes = [
+        n for n in recv_genes
+        if n not in set(recv_tfs) and n not in set(seed_nodes)
+    ]
 
     # Deduplicate across sender/receiver (receiver wins)
     recv_rec_set = set(recv_recs)
@@ -447,15 +637,21 @@ def compute_layout(nodes, edges, sender_ct_order, sender_cy_by_ct,
             len(nodes["recv_tfs"]), 180 - span, 180 + span)):
         positions[node] = pt
 
-    # Nucleus: recv_genes + seed_nodes together in grid
-    # Drawn nucleus semi-axes are 0.4*recv_r and 0.4*recv_r*RECV_RY_RATIO
-    # Use 90% of that to keep a margin
-    nuc_a = 0.40 * recv_r * 0.90
-    nuc_b = 0.40 * recv_r * RECV_RY_RATIO * 0.90
+    # Nucleus: recv_genes + seed_nodes together in a compact grid.  Node
+    # circles have a non-zero radius, so keeping their centres at 90% of the
+    # nucleus axes can visibly push their borders outside the nucleus.
+    nuc_a = 0.40 * recv_r * NUCLEUS_LAYOUT_FRACTION
+    nuc_b = 0.40 * recv_r * RECV_RY_RATIO * NUCLEUS_LAYOUT_FRACTION
     nucleus_nodes = nodes["recv_genes"] + nodes["seed_nodes"]
-    for node, pt in zip(nucleus_nodes,
-                        grid_positions_in_ellipse(nuc_cx, recv_cy, nuc_a, nuc_b,
-                                                  len(nucleus_nodes))):
+    if len(nucleus_nodes) <= NUCLEUS_RING_MAX_NODES:
+        nucleus_positions = ellipse_ring_positions(
+            nuc_cx, recv_cy, 0.85 * nuc_a, 0.85 * nuc_b, len(nucleus_nodes),
+        )
+    else:
+        nucleus_positions = grid_positions_in_ellipse(
+            nuc_cx, recv_cy, nuc_a, nuc_b, len(nucleus_nodes),
+        )
+    for node, pt in zip(nucleus_nodes, nucleus_positions):
         positions[node] = pt
 
     nodes["recv_recs"] = recv_recs_sorted
@@ -682,7 +878,7 @@ def draw_single_edge(ax, src, tgt, value, layer_key, rad,
 
 def draw_single_node(ax, node_name, role, cell_cx, cell_cy, positions, node_radii,
                      default_r, fill_fn, halo, show_labels, fontsize,
-                     name_collisions):
+                     name_collisions, node_type_colors=None):
     if node_name not in positions:
         return
     nx, ny = positions[node_name]
@@ -693,7 +889,8 @@ def draw_single_node(ax, node_name, role, cell_cx, cell_cy, positions, node_radi
     r = node_radii.get(node_name, default_r)
 
     if halo:
-        tc = TYPE_RGBA.get(draw_role, (0.7, 0.7, 0.7, 0.9))
+        palette = node_type_colors or TYPE_RGBA
+        tc = palette.get(draw_role, (0.7, 0.7, 0.7, 0.9))
         ax.add_patch(Circle((nx, ny), r * 1.55,
                             facecolor=(*tc[:3], 0.55),
                             edgecolor=(0.10, 0.10, 0.10, 0.45),
@@ -739,9 +936,11 @@ def draw_single_node(ax, node_name, role, cell_cx, cell_cy, positions, node_radi
 # Legend helpers
 # ═══════════════════════════════════════════════════════════════════════════
 
-def draw_type_legend(ax, fontsize, show_seeds=False):
+def draw_type_legend(ax, fontsize, show_seeds=False, node_type_colors=None):
+    palette = node_type_colors or TYPE_RGBA
+
     def _type_handle(role, label):
-        tc = TYPE_RGBA[role][:3]
+        tc = palette[role][:3]
         return mlines.Line2D(
             [], [], marker="o", linestyle="None", markersize=11,
             markerfacecolor=(*tc, 0.7),
@@ -760,9 +959,11 @@ def draw_type_legend(ax, fontsize, show_seeds=False):
 
 
 def draw_contrast_legend(ax, scheme, delta_vmax, normalized, fontsize,
-                         show_seeds=False):
+                         show_seeds=False, node_type_colors=None):
+    palette = node_type_colors or TYPE_RGBA
+
     def _type_handle(role, label):
-        tc = TYPE_RGBA[role][:3]
+        tc = palette[role][:3]
         return mlines.Line2D(
             [], [], marker="o", linestyle="None", markersize=11,
             markerfacecolor=(0.95, 0.95, 0.95, 1.0),
@@ -809,6 +1010,9 @@ def draw_contrast_legend(ax, scheme, delta_vmax, normalized, fontsize,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def compute_global_geometry(nodes):
+    receiver_only = not (
+        nodes["sender_recs"] or nodes["sender_tfs"] or nodes["ligands"]
+    )
     sender_ct_order = list(dict.fromkeys(
         celltype_of(n) for n in nodes["ligands"]
     ))
@@ -834,8 +1038,8 @@ def compute_global_geometry(nodes):
     sender_cx      = SENDER_R + 0.5
     extracell_x_lo = sender_cx + SENDER_R + BUFFER
     extracell_x_hi = extracell_x_lo + 2.8
-    recv_cx        = extracell_x_hi + BUFFER + RECV_R
-    recv_cy        = sender_ys[-1] + SENDER_R * 1.10 - RECV_R
+    recv_cx        = 0.0 if receiver_only else extracell_x_hi + BUFFER + RECV_R
+    recv_cy        = 0.0 if receiver_only else sender_ys[-1] + SENDER_R * 1.10 - RECV_R
     NUC_CX         = recv_cx + 0.10 * RECV_R
 
     return {
@@ -852,17 +1056,24 @@ def compute_global_geometry(nodes):
         "recv_cx": recv_cx,
         "recv_cy": recv_cy,
         "NUC_CX": NUC_CX,
+        "receiver_only": receiver_only,
     }
 
 
 def setup_figure(geo, figsize=None):
-    x_min = -geo["SENDER_R"] * 0.3
-    x_max = geo["recv_cx"] + geo["RECV_R"] + 1.5
-    y_max = max(geo["total_h"] / 2 + geo["SENDER_R"] + 0.8,
-                geo["RECV_R"] * geo["RECV_RY_RATIO"] + 1.5)
+    if geo.get("receiver_only", False):
+        x_min = geo["recv_cx"] - geo["RECV_R"] - 1.5
+        x_max = geo["recv_cx"] + geo["RECV_R"] + 1.5
+        y_max = geo["RECV_R"] * geo["RECV_RY_RATIO"] + 1.5
+    else:
+        x_min = -geo["SENDER_R"] * 0.3
+        x_max = geo["recv_cx"] + geo["RECV_R"] + 1.5
+        y_max = max(geo["total_h"] / 2 + geo["SENDER_R"] + 0.8,
+                    geo["RECV_R"] * geo["RECV_RY_RATIO"] + 1.5)
     if figsize is None:
-        fw = max(14, (x_max - x_min) * 1.1)
-        fh = max(8, 2 * y_max * 0.9)
+        min_fw, min_fh = ((8, 7) if geo.get("receiver_only", False) else (14, 8))
+        fw = max(min_fw, (x_max - x_min) * 1.1)
+        fh = max(min_fh, 2 * y_max * 0.9)
         figsize = (fw, fh)
     fig, ax = plt.subplots(figsize=figsize)
     ax.set_aspect("equal")
@@ -878,7 +1089,7 @@ def draw_cells_and_edges(ax, nodes, edges, geo, *,
                          show_labels, show_seeds, fill_fn, edge_color_fn,
                          seed_label=None, seed_label_fontsize=10,
                          score_filter_dict=None, lfc_thresholds=None,
-                         flow="upstream"):
+                         flow="upstream", node_type_colors=None):
     g = geo
     flow = normalize_flow(flow)
 
@@ -910,13 +1121,7 @@ def draw_cells_and_edges(ax, nodes, edges, geo, *,
 
     lw_ranges = compute_edge_lw_ranges(edges)
 
-    edge_configs = [
-        ("upstream_r_tf",   0.30),
-        ("upstream_tf_lig", 0.20),
-        ("lig_rec",         0.10),
-        ("rec_tf",          0.25),
-    ]
-    for layer_key, rad in edge_configs:
+    for layer_key, rad in CASCADE_EDGE_CURVATURE.items():
         for _, row in edges[layer_key].iterrows():
             draw_single_edge(
                 ax, row["source"], row["target"], row["value"],
@@ -945,6 +1150,7 @@ def draw_cells_and_edges(ax, nodes, edges, geo, *,
                 ax, n, role, cell_cx, cell_cy, positions, node_radii,
                 NODE_R, fill_fn, node_type_halo,
                 show_labels, label_fontsize, nodes["name_collisions"],
+                node_type_colors=node_type_colors,
             )
 
     return positions
@@ -952,8 +1158,12 @@ def draw_cells_and_edges(ax, nodes, edges, geo, *,
 
 def add_section_labels(ax, geo, y_max, label_fontsize):
     g = geo
-    for x, lbl in [(g["sender_cx"], "Sender cells"),
-                   ((g["extracell_x_lo"] + g["extracell_x_hi"]) / 2, "Ligands"),
-                   (g["recv_cx"], "Receiver")]:
+    labels = [(g["recv_cx"], "Receiver")]
+    if not g.get("receiver_only", False):
+        labels[:0] = [
+            (g["sender_cx"], "Sender cells"),
+            ((g["extracell_x_lo"] + g["extracell_x_hi"]) / 2, "Ligands"),
+        ]
+    for x, lbl in labels:
         ax.text(x, -y_max + 0.3, lbl, ha="center", va="bottom",
                 fontsize=label_fontsize, color="gray", style="italic")

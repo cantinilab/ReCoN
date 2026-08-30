@@ -61,6 +61,23 @@ class TestGetCelltypeGrnReceptorBipartite:
         # Check expected columns from bipartite structure
         assert 'col1' in result.columns or 'col2' in result.columns
     
+
+    def test_gene_layer_falls_back_to_grn_layer_name(self, simple_multicell_for_sankey):
+        """Older Multicell objects may name the intracellular layer 'grn'."""
+        mux = simple_multicell_for_sankey.multiplexes["CellA_grn"]
+        mux["names"] = ["grn" if name == "gene" else name for name in mux["names"]]
+
+        result = sankey_paths.get_celltype_gene_layer(
+            simple_multicell_for_sankey,
+            cell_type="CellA",
+            layer_name="gene",
+            as_dataframe=True,
+        )
+
+        assert isinstance(result, pd.DataFrame)
+        assert "source" in result.columns
+        assert "target" in result.columns
+
     def test_invalid_celltype(self, simple_multicell_for_sankey):
         """Test that invalid cell type raises KeyError."""
         with pytest.raises(KeyError, match="No bipartite entry found"):
@@ -88,6 +105,23 @@ class TestGetCelltypeGeneLayer:
         assert 'source' in result.columns
         assert 'target' in result.columns
     
+
+    def test_gene_layer_falls_back_to_grn_layer_name(self, simple_multicell_for_sankey):
+        """Older Multicell objects may name the intracellular layer 'grn'."""
+        mux = simple_multicell_for_sankey.multiplexes["CellA_grn"]
+        mux["names"] = ["grn" if name == "gene" else name for name in mux["names"]]
+
+        result = sankey_paths.get_celltype_gene_layer(
+            simple_multicell_for_sankey,
+            cell_type="CellA",
+            layer_name="gene",
+            as_dataframe=True,
+        )
+
+        assert isinstance(result, pd.DataFrame)
+        assert "source" in result.columns
+        assert "target" in result.columns
+
     def test_invalid_celltype(self, simple_multicell_for_sankey):
         """Test that invalid cell type raises KeyError."""
         with pytest.raises(KeyError, match="No multiplex found"):
@@ -186,6 +220,25 @@ class TestExtractPairFunctions:
         assert 'gene' in result.columns
         assert 'tf' in result.columns
     
+
+    def test_extract_gene_tf_pairs_supports_gene_to_tf_orientation(self):
+        tf_gene_layer = pd.DataFrame({
+            "source": ["GENE1::CellA", "GENE2::CellA"],
+            "target": ["TF1_TF::CellA", "TF2_TF::CellA"],
+            "weight": [0.5, 0.6],
+        })
+        top_tfs = pd.DataFrame({"node": ["TF1_TF::CellA"], "score": [1.0]})
+
+        result = sankey_paths.extract_gene_tf_pairs(
+            tf_gene_layer,
+            top_tfs,
+            pd.Index(["GENE1::CellA"]),
+        )
+
+        assert result[["tf", "gene"]].to_dict("records") == [
+            {"tf": "TF1_TF::CellA", "gene": "GENE1::CellA"}
+        ]
+
     def test_extract_receptor_tf_pairs(self, simple_receptor_grn, simple_results):
         """Test extraction of receptor-TF pairs."""
         # Prepare receptor_gene_layer
