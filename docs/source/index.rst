@@ -28,6 +28,7 @@
    Exploring molecular coordination <recon_examples/2.recon_multicellular_coordination>
    Visualizing cell and molecular cascades <recon_examples/3.recon_molecular_cascades>
    Exploring a spatial heart niche <recon_examples/6.recon_spatial_niche>
+   Drawing biological cascade plots <recon_examples/7.recon_cascade_plots>
 
 .. toctree::
    :maxdepth: 1
@@ -78,6 +79,7 @@ ReCoN can be used to address several biological questions, including:
    - :doc:`Understanding multicellular program coordination <recon_examples/2.recon_multicellular_coordination>`
    - :doc:`Exploring intracellular and intercellular regulatory mechanisms <recon_examples/3.recon_molecular_cascades>`
    - :doc:`Exploring a spatial heart niche <recon_examples/6.recon_spatial_niche>`
+   - :doc:`Drawing biological cascade plots <recon_examples/7.recon_cascade_plots>`
    - **GRN generation**:
 
      - :doc:`From multiomics <recon_examples/4.recon_hummus>`
