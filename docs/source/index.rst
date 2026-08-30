@@ -26,9 +26,9 @@
 
    Predicting treatment effects <recon_examples/1.recon_molecular_treatment>
    Exploring molecular coordination <recon_examples/2.recon_multicellular_coordination>
-   Visualizing cell and molecular cascades <recon_examples/3.recon_molecular_cascades>
    Exploring a spatial heart niche <recon_examples/6.recon_spatial_niche>
-   Drawing biological cascade plots <recon_examples/7.recon_cascade_plots>
+   Visualizing cell and molecular cascades <recon_examples/7.recon_cascade_plots>
+   Compact visualizations with Sankey diagrams <recon_examples/3.recon_molecular_cascades>
 
 .. toctree::
    :maxdepth: 1
@@ -77,9 +77,9 @@ ReCoN can be used to address several biological questions, including:
 
    - :doc:`Predicting treatment effects in multicellular systems <recon_examples/1.recon_molecular_treatment>`
    - :doc:`Understanding multicellular program coordination <recon_examples/2.recon_multicellular_coordination>`
-   - :doc:`Exploring intracellular and intercellular regulatory mechanisms <recon_examples/3.recon_molecular_cascades>`
    - :doc:`Exploring a spatial heart niche <recon_examples/6.recon_spatial_niche>`
-   - :doc:`Drawing biological cascade plots <recon_examples/7.recon_cascade_plots>`
+   - :doc:`Visualizing cell and molecular cascades <recon_examples/7.recon_cascade_plots>`
+   - :doc:`Compact visualizations with Sankey diagrams <recon_examples/3.recon_molecular_cascades>`
    - **GRN generation**:
 
      - :doc:`From multiomics <recon_examples/4.recon_hummus>`
