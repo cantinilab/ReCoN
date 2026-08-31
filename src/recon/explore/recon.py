@@ -676,6 +676,116 @@ class Multicell(Celltype):
         )
 
 
+def export_multicell_to_sif(multicell, filename="multicell_network.sif"):
+    """Flatten a ``Multicell`` object into a single .sif file.
+
+    Concatenates every multiplex layer and bipartite bridge of ``multicell``
+    into one edge list, then cleans it into a static, non-redundant network:
+    it drops the non-biological ``_receptor``/``_to_ligands``/``_to_receptors``
+    layers (kept only to satisfy MultiXrank's requirement),
+    collapses node aliases into one ``gene::celltype`` identity per layer,
+    sets a placeholder ``+1`` sign on every interaction (undirected for now, need to 
+    be updated on the future to expand for directed interactions), and writes the result to ``filename``.
+
+    Parameters
+    ----------
+    multicell : Multicell
+        A built ``Multicell`` object.
+    filename : str, default="multicell_network.sif"
+        Path the resulting tab-separated SIF file is written to.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The exported edge list with ``source``, ``interaction``, and
+        ``target`` columns, matching the file written to ``filename``.
+    """
+    edges = []  # accumulator: one small DataFrame per layer/bridge, concatenated at the end
+
+    # Export multiplex layers: for N cell types there are 2N+1 layers
+    # (N x grn, N x receptor, 1 shared cell_communication)
+    for key, value in multicell.multiplexes.items():
+        # value = {"names":..., "graph_type":..., "layers":[df]}; "layers" is a list but only
+        # ever has 1 entry here, so [0] pulls out the actual edge table for this layer
+        df = value["layers"][0]
+        # keep only source/target — already in correct biological order for multiplex layers
+        tmp = df[["source", "target"]].copy()
+        # tag every row with the layer name (e.g. "B.cells_grn") so we know which layer it came from
+        tmp["interaction"] = key
+        edges.append(tmp)
+
+    # Export bipartite layers: for N cell types there are 3N bridges connecting pairs of multiplexes
+    # grn-receptor (NicheNet PKN): col2=receptor (source), col1=gene (target) — swap needed
+    # to_ligands / to_receptors: col1=source, col2=target — no swap
+    for key, value in multicell.bipartites.items():
+        # value = {"source":..., "target":..., "graph_type":..., "edge_list_df": df}
+        # edge_list_df uses generic col1/col2 (not source/target) since bipartites don't
+        # share one fixed naming convention
+        df = value["edge_list_df"]
+        if "grn" in key and "receptor" in key:
+            # only true for "{celltype}_grn-{celltype}_receptor" keys: here col1/col2 are
+            # positionally reversed (col2 holds the receptor, col1 holds the gene), so swap
+            # to get [source, target] = [receptor, gene]
+            tmp = df[["col2", "col1"]].copy()  # receptor -> gene
+        else:
+            # matches "{celltype}_to_ligands" and "{celltype}_to_receptors": these already
+            # have col1=source, col2=target, so no swap needed
+            tmp = df[["col1", "col2"]].copy()  # gene -> CC-node
+        # relabel whichever two columns were picked to the standard source/target names
+        tmp.columns = ["source", "target"]
+        # tag every row with the bridge name (e.g. "B.cells_to_ligands")
+        tmp["interaction"] = key
+        edges.append(tmp)
+
+    # stack all multiplex tables + bipartite tables into one flat edge list
+    edges = pd.concat(edges, ignore_index=True)
+    # reorder to standard SIF column order: source, interaction, target
+    edges = edges[["source", "interaction", "target"]]
+
+    ### Network processing
+
+    # --- Step 1: remove layers with no real biology ---
+    # to_ligands / to_receptors are pure identity bridges 
+    # grn-receptor is excluded from removal — it is the one bipartite with real
+    # receptor->gene biology (e.g. NicheNet PKN) and must survive.
+    remove_mask = (
+        edges["interaction"].str.contains("to_ligands|to_receptors", regex=True) |
+        (edges["interaction"].str.endswith("_receptor") & ~edges["interaction"].str.contains("grn-"))
+    )
+    edges = edges[~remove_mask].copy()
+
+    # --- Step 2: unify all remaining node aliases into one gene::celltype identity format---
+    # CC nodes:            APP-Macrophages.M1 -> APP::Macrophages.M1
+    # grn-receptor source: A1BG_receptor::B.cells -> A1BG::B.cells
+    # grn source:          E2F1_TF::B.cells  -> E2F1::B.cells
+    def cc_node_to_grn(node):
+        gene, celltype = node.rsplit("-", 1)
+        return f"{gene}::{celltype}"
+
+    cc_mask = edges["interaction"] == "cell_communication"
+    edges.loc[cc_mask, "source"] = edges.loc[cc_mask, "source"].apply(cc_node_to_grn)
+    edges.loc[cc_mask, "target"] = edges.loc[cc_mask, "target"].apply(cc_node_to_grn)
+
+    grn_rec_mask = edges["interaction"].str.contains("grn-", regex=False)
+    edges.loc[grn_rec_mask, "source"] = edges.loc[grn_rec_mask, "source"].str.replace("_receptor::", "::", regex=False)
+
+    edges[["source", "target"]] = edges[["source", "target"]].apply(
+        lambda x: x.str.replace("_TF::", "::", regex=False)
+    )
+
+    # --- Step 3: set all interactions to +1 (sign not available yet, to be worked on in the future) ---
+    edges["interaction"] = 1
+
+    # --- Step 4: replace remaining dashes in node names (e.g. HLA-DRA::B.cells -> HLA_DRA::B.cells) to avoid parsing issues ---
+    edges[["source", "target"]] = edges[["source", "target"]].apply(
+        lambda x: x.str.replace("-", "_", regex=False)
+    )
+
+    edges = edges[["source", "interaction", "target"]]
+    edges.to_csv(filename, sep="\t", header=True, index=False)
+    return edges
+
+
 def format_multicell_results(
     multicell_multixrank_results,
     celltypes: List[str],
