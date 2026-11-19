@@ -1,3 +1,4 @@
+import re
 import pandas as pd
 import networkx as nx
 from typing import Union, List, Tuple
@@ -273,7 +274,7 @@ def get_cell_communication_layer(
 
     # 5) Filter by receptor_cells if provided
     if receptor_cells is not None:
-        pattern = "|".join([f"::{rc}$" for rc in receptor_cells])
+        pattern = "|".join([f"::{re.escape(rc)}$" for rc in receptor_cells])
         df = df.loc[
             df["receptor"].str.contains(pattern, regex=True),
             :
@@ -281,7 +282,7 @@ def get_cell_communication_layer(
 
     # 6) Filter by ligand_cells if provided
     if ligand_cells is not None:
-        pattern = "|".join([f"::{lc}$" for lc in ligand_cells])
+        pattern = "|".join([f"::{re.escape(lc)}$" for lc in ligand_cells])
         df = df.loc[
             df["ligand"].str.contains(pattern, regex=True),
             :

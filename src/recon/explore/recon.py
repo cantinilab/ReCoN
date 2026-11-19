@@ -12,6 +12,19 @@ import copy
 import recon.plot
 
 
+def _celltype_layers(celltype_name):
+    """Exact layer names owned by a cell type.
+
+    Layers must always be matched against these exact names, never by
+    substring, so that cell types whose names overlap (e.g. "T" and "T_reg")
+    are kept separate.
+    """
+    return {
+        "receptor": f"{celltype_name}_receptor",
+        "grn": f"{celltype_name}_grn",
+    }
+
+
 class Celltype:
     """Single-cell-type multilayer network for ReCoN exploration.
 
@@ -369,32 +382,34 @@ class Celltype:
         celltype_name
     ):
 
-        self.multiplexes = {k.replace(self.celltype_name, celltype_name, 1): v
-                            for k, v in self.multiplexes.items()
-                            }
+        # Exact old -> new layer-name mapping (no substring replacement,
+        # which would corrupt names when one celltype name contains another)
+        old_layers = _celltype_layers(self.celltype_name)
+        new_layers = _celltype_layers(celltype_name)
+        layer_map = {old_layers[k]: new_layers[k] for k in old_layers}
 
-        self.bipartites = {
-            celltype_name+"_grn-" + celltype_name + "_receptor": self.bipartites[
-                self.celltype_name+"_grn-" + self.celltype_name + "_receptor"]\
-        }
+        def _rename(name):
+            return layer_map.get(name, name)
+
+        self.multiplexes = {_rename(k): v
+                            for k, v in self.multiplexes.items()}
+
+        old_bipartite = old_layers["grn"] + "-" + old_layers["receptor"]
+        new_bipartite = new_layers["grn"] + "-" + new_layers["receptor"]
+        self.bipartites = {new_bipartite: self.bipartites[old_bipartite]}
         for bipartite in self.bipartites:
             self.bipartites[bipartite]["source"] = \
-                self.bipartites[bipartite]["source"].replace(
-                self.celltype_name, celltype_name)
+                _rename(self.bipartites[bipartite]["source"])
             self.bipartites[bipartite]["target"] = \
-                self.bipartites[bipartite]["target"].replace(
-                self.celltype_name, celltype_name)
+                _rename(self.bipartites[bipartite]["target"])
 
         lamb = self.lamb
-        lamb.index = lamb.index.str.replace(
-            self.celltype_name+"_", celltype_name+"_")
-        lamb.columns = lamb.columns.str.replace(
-            self.celltype_name+"_", celltype_name+"_")
+        lamb.index = lamb.index.map(_rename)
+        lamb.columns = lamb.columns.map(_rename)
         self.lamb = lamb
 
         eta = self.eta
-        eta.index = eta.index.str.replace(
-            self.celltype_name+"_", celltype_name+"_")
+        eta.index = eta.index.map(_rename)
         self.eta = eta
 
         self.celltype_name = celltype_name
@@ -558,35 +573,44 @@ class Multicell(Celltype):
             }
         }
 
-        # Update with layers and bipartites of each celltype
+        # Update with layers and bipartites of each celltype, keeping an
+        # explicit record of which celltype owns each layer and bipartite.
+        # The ccc-to-celltype bipartites built above are recorded too.
+        self.layer_celltypes = {}
+        self.bipartite_celltypes = {
+            celltype + suffix: celltype
+            for celltype in self.celltypes_names
+            for suffix in ("_to_ligands", "_to_receptors")
+        }
         for celltype in self.celltypes_names:
             self.multiplexes.update(celltypes[celltype].multiplexes)
             self.bipartites.update(celltypes[celltype].bipartites)
+            for layer in celltypes[celltype].multiplexes:
+                self.layer_celltypes[layer] = celltype
+            for bipartite in celltypes[celltype].bipartites:
+                self.bipartite_celltypes[bipartite] = celltype
         
         # Add network_key column to all multiplex layers for sankey plots
         for key in self.multiplexes:
             if "network_key" not in self.multiplexes[key]["layers"][0].columns:
                 self.multiplexes[key]["layers"][0]["network_key"] = key
         
-        # Update nodes of each celtype to add a celltype specific suffix
-        for celltype in self.celltypes_names:
-            for multiplex in self.multiplexes:
-                if celltype in multiplex:
-                    self.multiplexes[multiplex]["layers"][0]["source"] = \
-                        self.multiplexes[multiplex]["layers"][0]["source"] + \
-                            "::" + celltype
-                    self.multiplexes[multiplex]["layers"][0]["target"] = \
-                        self.multiplexes[multiplex]["layers"][0]["target"] + \
-                            "::" + celltype
-            for bipartite in self.bipartites:
-                if celltype in self.bipartites[bipartite]["source"]:
-                    self.bipartites[bipartite]["edge_list_df"]["col2"] = \
-                        self.bipartites[bipartite]["edge_list_df"]["col2"] + \
-                            "::" + celltype
-                if celltype in self.bipartites[bipartite]["target"]:
-                    self.bipartites[bipartite]["edge_list_df"]["col1"] = \
-                        self.bipartites[bipartite]["edge_list_df"]["col1"] + \
-                            "::" + celltype
+        # Update nodes of each celltype to add a celltype specific suffix.
+        # Ownership is looked up exactly in self.layer_celltypes, so each
+        # layer / bipartite side gets exactly one suffix.
+        for multiplex, celltype in self.layer_celltypes.items():
+            layer = self.multiplexes[multiplex]["layers"][0]
+            layer["source"] = layer["source"] + "::" + celltype
+            layer["target"] = layer["target"] + "::" + celltype
+        for bipartite in self.bipartites.values():
+            source_celltype = self.layer_celltypes.get(bipartite["source"])
+            target_celltype = self.layer_celltypes.get(bipartite["target"])
+            if source_celltype is not None:
+                bipartite["edge_list_df"]["col2"] = \
+                    bipartite["edge_list_df"]["col2"] + "::" + source_celltype
+            if target_celltype is not None:
+                bipartite["edge_list_df"]["col1"] = \
+                    bipartite["edge_list_df"]["col1"] + "::" + target_celltype
 
         # Prepare lamb matrix if not provided
         if lamb is None:
@@ -596,12 +620,15 @@ class Multicell(Celltype):
                 columns=list(self.multiplexes.keys())
             )
 
-            grn_layer_mask = lamb.index.str.endswith("_grn")
-            receptor_layer_mask = lamb.index.str.endswith("_receptor")
-            ccc_layer_mask = lamb.index.str.endswith("cell_communication")
+            grn_layer_mask = lamb.index.isin(
+                [_celltype_layers(ct)["grn"] for ct in self.celltypes_names])
+            receptor_layer_mask = lamb.index.isin(
+                [_celltype_layers(ct)["receptor"] for ct in self.celltypes_names])
+            ccc_layer_mask = lamb.index == "cell_communication"
 
             for celltype in self.celltypes_names:
-                cell_type_mask = lamb.index.str.contains(celltype)
+                cell_type_mask = lamb.index.isin(
+                    list(_celltype_layers(celltype).values()))
 
                 lamb.loc[
                     grn_layer_mask*cell_type_mask,
@@ -853,9 +880,10 @@ def set_lambda(
         multiplexes = list(multicell.multiplexes.keys())
         celltypes = multicell.celltypes_names
     else:
+        multiplexes = []
         for celltype in celltypes:
-            multiplexes.append(f"{celltype}_receptor")
-            multiplexes.append(f"{celltype}_grn")
+            multiplexes.append(_celltype_layers(celltype)["receptor"])
+            multiplexes.append(_celltype_layers(celltype)["grn"])
         multiplexes.append(cell_communication_layer_name)
 
     lamb = pd.DataFrame(
@@ -865,12 +893,15 @@ def set_lambda(
     )
     
     # define masks
-    grn_layer_mask = lamb.index.str.endswith("_grn")
-    receptor_layer_mask = lamb.index.str.endswith("_receptor")
-    ccc_layer_mask = lamb.index.str.endswith(cell_communication_layer_name)
+    grn_layer_mask = lamb.index.isin(
+        [_celltype_layers(ct)["grn"] for ct in celltypes])
+    receptor_layer_mask = lamb.index.isin(
+        [_celltype_layers(ct)["receptor"] for ct in celltypes])
+    ccc_layer_mask = lamb.index == cell_communication_layer_name
 
     for celltype in celltypes:
-        cell_type_mask = lamb.index.str.contains(celltype)
+        cell_type_mask = lamb.index.isin(
+            list(_celltype_layers(celltype).values()))
 
         # Transition FROM receptor and grn TO grn
         lamb.loc[

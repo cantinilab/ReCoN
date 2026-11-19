@@ -364,3 +364,75 @@ class TestMulticellIllustration:
         assert captured["display_layer_names"] is True
         assert captured["alpha_layers"] == 0.25
         assert captured["cell_communication_layer_name"] == "ccc"
+
+
+class TestMulticellOverlappingCelltypeNames:
+    """Celltype names that are substrings of each other ('T' / 'T_reg') or of the
+    ccc layer name ('cell' / 'cell_communication') must stay fully separate."""
+
+    def test_overlapping_celltype_names_get_single_exact_suffix(
+        self, simple_grn, simple_receptor_grn
+    ):
+        from recon.explore.recon import set_lambda
+
+        names = ["T", "T_reg", "cell"]
+        ccc = pd.DataFrame({
+            "source": ["LIGAND1", "LIGAND2"],
+            "target": ["RECEPTOR1", "RECEPTOR2"],
+            "celltype_source": ["T", "T_reg"],
+            "celltype_target": ["T_reg", "cell"],
+            "lr_means": [0.5, 0.6],
+        })
+        multicell = Multicell(
+            celltypes=[
+                Celltype(
+                    celltype_name=name,
+                    grn_graph=simple_grn.copy(),
+                    receptor_grn_bipartite=simple_receptor_grn.copy(),
+                )
+                for name in names
+            ],
+            cell_communication_graph=ccc,
+        )
+
+        # Explicit ownership records
+        assert multicell.layer_celltypes == {
+            f"{ct}_{kind}": ct for ct in names for kind in ("receptor", "grn")
+        }
+        assert multicell.bipartite_celltypes == {
+            **{f"{ct}{suffix}": ct for ct in names
+               for suffix in ("_to_ligands", "_to_receptors")},
+            **{f"{ct}_grn-{ct}_receptor": ct for ct in names},
+        }
+
+        # Every node of a celltype layer carries exactly its own suffix
+        for layer, ct in multicell.layer_celltypes.items():
+            df = multicell.multiplexes[layer]["layers"][0]
+            for node in pd.concat([df["source"], df["target"]]):
+                assert node.count("::") == 1
+                assert node.endswith(f"::{ct}")
+
+        # The ccc layer itself is never suffixed
+        ccc_layer = multicell.multiplexes["cell_communication"]["layers"][0]
+        assert not pd.concat(
+            [ccc_layer["source"], ccc_layer["target"]]).str.contains("::").any()
+
+        # Bipartites: only the celltype-owned side is suffixed, exactly once
+        for key, bip in multicell.bipartites.items():
+            ct = multicell.bipartite_celltypes[key]
+            edges = bip["edge_list_df"]
+            if bip["target"] in multicell.layer_celltypes:
+                assert edges["col1"].str.endswith(f"::{ct}").all()
+                assert (edges["col1"].str.count("::") == 1).all()
+            if bip["source"] in multicell.layer_celltypes:
+                assert edges["col2"].str.endswith(f"::{ct}").all()
+                assert (edges["col2"].str.count("::") == 1).all()
+            else:
+                assert not edges["col2"].str.contains("::").any()
+
+        # Default and set_lambda transition matrices: no direct T <-> T_reg links
+        t_layers = ["T_receptor", "T_grn"]
+        treg_layers = ["T_reg_receptor", "T_reg_grn"]
+        for lamb in (multicell.lamb, set_lambda(multicell=multicell)):
+            assert (lamb.loc[t_layers, treg_layers] == 0).all().all()
+            assert (lamb.loc[treg_layers, t_layers] == 0).all().all()

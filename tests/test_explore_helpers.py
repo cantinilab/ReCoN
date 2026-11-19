@@ -53,10 +53,51 @@ def test_format_multicell_results_does_not_warn_on_slice_assignment():
     assert formatted.loc["G1", "CellA"] == pytest.approx(0.1)
 
 
-def test_set_lambda_celltypes_only_path_currently_raises_unboundlocalerror():
-    """Role: document the current celltypes-only path until the implementation is fixed."""
-    with pytest.raises(UnboundLocalError):
-        set_lambda(multicell=None, celltypes=["CellA"])
+def test_set_lambda_celltypes_only_path_builds_expected_layers():
+    """Role: the celltypes-only path builds one receptor/grn pair per celltype plus ccc."""
+    lamb = set_lambda(multicell=None, celltypes=["CellA", "CellB"])
+
+    expected = ["CellA_receptor", "CellA_grn", "CellB_receptor", "CellB_grn",
+                "cell_communication"]
+    assert list(lamb.index) == expected
+    assert list(lamb.columns) == expected
+    assert (lamb.sum(axis=1) - 1.0).abs().max() < 1e-10
+
+
+@pytest.mark.parametrize("strategy", ["intracell", "intercell"])
+@pytest.mark.parametrize("direction", ["downstream", "upstream"])
+def test_set_lambda_keeps_overlapping_celltype_names_separate(direction, strategy):
+    """Role: 'T' is a substring of 'T_reg'; their layers must never be linked directly."""
+    lamb = set_lambda(celltypes=["T", "T_reg"], direction=direction, strategy=strategy)
+
+    t_layers = ["T_receptor", "T_grn"]
+    treg_layers = ["T_reg_receptor", "T_reg_grn"]
+    assert (lamb.loc[t_layers, treg_layers] == 0).all().all()
+    assert (lamb.loc[treg_layers, t_layers] == 0).all().all()
+
+    # Same matrix as two non-overlapping celltypes
+    reference = set_lambda(celltypes=["A", "B"], direction=direction, strategy=strategy)
+    assert lamb.to_numpy().tolist() == reference.to_numpy().tolist()
+
+
+def test_rename_celltype_replaces_exact_layer_names_only(simple_grn, simple_receptor_grn):
+    """Role: renaming 're' must not touch the 're' inside '_receptor'."""
+    from recon.explore.recon import Celltype
+
+    ct = Celltype(
+        celltype_name="re",
+        grn_graph=simple_grn.copy(),
+        receptor_grn_bipartite=simple_receptor_grn.copy(),
+    )
+    ct.rename_celltype("Mono")
+
+    assert set(ct.multiplexes) == {"Mono_receptor", "Mono_grn"}
+    assert set(ct.bipartites) == {"Mono_grn-Mono_receptor"}
+    bip = ct.bipartites["Mono_grn-Mono_receptor"]
+    assert (bip["source"], bip["target"]) == ("Mono_receptor", "Mono_grn")
+    assert set(ct.lamb.index) == set(ct.lamb.columns) == {"Mono_receptor", "Mono_grn"}
+    assert set(ct.eta.index) == {"Mono_receptor", "Mono_grn"}
+    assert ct.celltype_name == "Mono"
 
 
 def test_set_lambda_warns_when_both_multicell_and_celltypes_are_provided(
