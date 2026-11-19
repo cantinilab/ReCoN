@@ -26,6 +26,34 @@ maintainers and agents can update it safely:
 - Keep GitHub release drafts shorter than the changelog. The release page can
   summarize highlights and link back here for detail.
 
+## v0.0.5a1 - 2026-11-19
+
+ReCoN v0.0.5a1 fixes multicellular models whose cell-type names overlap, which
+previously made their layers collapse together.
+
+### Fixed
+
+- Fixed cell types whose names contain one another (e.g. `T` and `T_reg`, or
+  `cell` and `cell_communication`) being merged: nodes could receive several
+  `::celltype` suffixes and the transition matrix linked those cell types
+  directly. Layers are now matched by exact name in `Multicell`, `set_lambda`
+  and `Celltype.rename_celltype`.
+- Fixed `set_lambda(celltypes=...)` raising `UnboundLocalError` when called
+  without a `Multicell`.
+- Fixed Sankey ligand/receptor cell filters for cell-type names containing
+  regex characters (e.g. `CD4+ T`).
+
+### Added
+
+- Added `Multicell.layer_celltypes` and `Multicell.bipartite_celltypes`, which
+  record the cell type that owns each layer and bipartite.
+
+### Tests
+
+- Added regression coverage for overlapping cell-type names in `Multicell`,
+  `set_lambda` and `rename_celltype`, and for the `set_lambda(celltypes=...)`
+  path.
+
 ## v0.0.4 - 2026-08-30
 
 ReCoN v0.0.4 adds guided spatial and cascade-plot workflows and improves the
